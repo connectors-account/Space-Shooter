@@ -1,29 +1,32 @@
 using UnityEngine;
 using UnityEngine.UI;
+using TMPro;
 
-/// <summary>
-/// Manages all UI elements including health display, score, and game over screen.
-/// </summary>
 public class UIManager : MonoBehaviour
 {
     public static UIManager Instance { get; private set; }
 
     [Header("HUD Elements")]
-    [SerializeField] private Text scoreText;
-    [SerializeField] private Text healthText;
-    [SerializeField] private Image[] healthIcons;
+    public Slider healthBar;
+    public TextMeshProUGUI healthText;
+    public TextMeshProUGUI scoreText;
+    public TextMeshProUGUI highScoreText;
+    public TextMeshProUGUI waveText;
 
-    [Header("Game Over Panel")]
-    [SerializeField] private GameObject gameOverPanel;
-    [SerializeField] private Text gameOverScoreText;
-    [SerializeField] private Text highScoreText;
+    [Header("Panels")]
+    public GameObject pausePanel;
+    public GameObject gameOverPanel;
+    public GameObject waveCompletePanel;
 
-    [Header("Pause Menu")]
-    [SerializeField] private GameObject pauseMenuPanel;
+    [Header("Game Over UI")]
+    public TextMeshProUGUI finalScoreText;
+    public TextMeshProUGUI finalHighScoreText;
 
-    private void Awake()
+    [Header("Wave Complete UI")]
+    public TextMeshProUGUI waveCompleteText;
+
+    void Awake()
     {
-        // Singleton pattern
         if (Instance == null)
         {
             Instance = this;
@@ -35,133 +38,128 @@ public class UIManager : MonoBehaviour
         }
     }
 
-    private void Start()
+    void Start()
     {
-        // Ensure panels are hidden at start
-        HideGameOver();
-        HidePauseMenu();
+        // Hide all panels initially
+        if (pausePanel != null) pausePanel.SetActive(false);
+        if (gameOverPanel != null) gameOverPanel.SetActive(false);
+        if (waveCompletePanel != null) waveCompletePanel.SetActive(false);
+
+        // Subscribe to events
+        if (ScoreManager.Instance != null)
+        {
+            ScoreManager.Instance.OnScoreChanged.AddListener(UpdateScore);
+            ScoreManager.Instance.OnHighScoreChanged.AddListener(UpdateHighScore);
+        }
     }
 
-    /// <summary>
-    /// Update the score display.
-    /// </summary>
+    public void UpdateHealthBar(int currentHealth, int maxHealth)
+    {
+        if (healthBar != null)
+        {
+            healthBar.maxValue = maxHealth;
+            healthBar.value = currentHealth;
+        }
+
+        if (healthText != null)
+        {
+            healthText.text = $"{currentHealth}/{maxHealth}";
+        }
+    }
+
     public void UpdateScore(int score)
     {
         if (scoreText != null)
         {
-            scoreText.text = $"Score: {score}";
+            scoreText.text = $"Score: {score:N0}";
         }
     }
 
-    /// <summary>
-    /// Update the health display.
-    /// </summary>
-    public void UpdateHealth(int currentHealth, int maxHealth)
+    public void UpdateHighScore(int highScore)
     {
-        // Update text display
-        if (healthText != null)
+        if (highScoreText != null)
         {
-            healthText.text = $"Health: {currentHealth}/{maxHealth}";
-        }
-
-        // Update health icons if available
-        if (healthIcons != null && healthIcons.Length > 0)
-        {
-            for (int i = 0; i < healthIcons.Length; i++)
-            {
-                if (healthIcons[i] != null)
-                {
-                    healthIcons[i].enabled = i < currentHealth;
-                }
-            }
+            highScoreText.text = $"High Score: {highScore:N0}";
         }
     }
 
-    /// <summary>
-    /// Show the game over screen with final score.
-    /// </summary>
-    public void ShowGameOver(int finalScore, int highScore)
+    public void UpdateWaveCounter(int wave)
+    {
+        if (waveText != null)
+        {
+            waveText.text = $"Wave: {wave}";
+        }
+    }
+
+    public void ShowPauseMenu(bool show)
+    {
+        if (pausePanel != null)
+        {
+            pausePanel.SetActive(show);
+        }
+    }
+
+    public void ShowGameOverScreen()
     {
         if (gameOverPanel != null)
         {
             gameOverPanel.SetActive(true);
-        }
 
-        if (gameOverScoreText != null)
-        {
-            gameOverScoreText.text = $"Final Score: {finalScore}";
-        }
+            if (finalScoreText != null && ScoreManager.Instance != null)
+            {
+                finalScoreText.text = $"Final Score: {ScoreManager.Instance.GetScore():N0}";
+            }
 
-        if (highScoreText != null)
-        {
-            highScoreText.text = $"High Score: {highScore}";
+            if (finalHighScoreText != null && ScoreManager.Instance != null)
+            {
+                finalHighScoreText.text = $"High Score: {ScoreManager.Instance.GetHighScore():N0}";
+            }
         }
     }
 
-    /// <summary>
-    /// Hide the game over screen.
-    /// </summary>
-    public void HideGameOver()
+    public void ShowWaveComplete(int wave)
     {
-        if (gameOverPanel != null)
+        if (waveCompletePanel != null)
         {
-            gameOverPanel.SetActive(false);
+            waveCompletePanel.SetActive(true);
+
+            if (waveCompleteText != null)
+            {
+                waveCompleteText.text = $"Wave {wave} Complete!";
+            }
+
+            // Hide after delay
+            StartCoroutine(HideWaveComplete());
         }
     }
 
-    /// <summary>
-    /// Show the pause menu.
-    /// </summary>
-    public void ShowPauseMenu()
+    System.Collections.IEnumerator HideWaveComplete()
     {
-        if (pauseMenuPanel != null)
+        yield return new WaitForSeconds(2f);
+        if (waveCompletePanel != null)
         {
-            pauseMenuPanel.SetActive(true);
+            waveCompletePanel.SetActive(false);
         }
     }
 
-    /// <summary>
-    /// Hide the pause menu.
-    /// </summary>
-    public void HidePauseMenu()
-    {
-        if (pauseMenuPanel != null)
-        {
-            pauseMenuPanel.SetActive(false);
-        }
-    }
-
-    // Button callback methods (can be assigned in Unity Inspector)
-    
-    public void OnRestartButtonClicked()
-    {
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.RestartGame();
-        }
-    }
-
+    // Button callbacks
     public void OnResumeButtonClicked()
     {
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.TogglePause();
-        }
+        GameManager.Instance?.ResumeGame();
+    }
+
+    public void OnRestartButtonClicked()
+    {
+        GameManager.Instance?.RestartGame();
+    }
+
+    public void OnMainMenuButtonClicked()
+    {
+        GameManager.Instance?.LoadMainMenu();
     }
 
     public void OnQuitButtonClicked()
     {
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.QuitGame();
-        }
-    }
-
-    private void OnDestroy()
-    {
-        if (Instance == this)
-        {
-            Instance = null;
-        }
+        GameManager.Instance?.QuitGame();
     }
 }
