@@ -1,0 +1,328 @@
+{
+  "prefabs": {
+    "player": {
+      "name": "Player",
+      "tag": "Player",
+      "layer": "Player",
+      "components": {
+        "SpriteRenderer": {
+          "sortingOrder": 5,
+          "sprite": "Generated via SpriteGenerator.CreatePlayerShip()"
+        },
+        "PlayerController": {
+          "moveSpeed": 8.0,
+          "smoothTime": 0.05,
+          "fireRate": 0.2,
+          "rapidFireRate": 0.08,
+          "minX": -8.0,
+          "maxX": 8.0,
+          "minY": -4.0,
+          "maxY": 4.0,
+          "shieldDuration": 5.0,
+          "rapidFireDuration": 5.0
+        },
+        "HealthSystem": {
+          "maxHealth": 100,
+          "destroyOnDeath": true,
+          "invincibilityDuration": 1.0,
+          "flashOnDamage": true,
+          "damageColor": "#FF0000",
+          "flashDuration": 0.1
+        },
+        "BoxCollider2D": {
+          "size": { "x": 0.8, "y": 0.8 },
+          "isTrigger": true
+        },
+        "Rigidbody2D": {
+          "gravityScale": 0,
+          "freezeRotation": true
+        }
+      },
+      "children": [
+        {
+          "name": "FirePoint",
+          "localPosition": { "x": 0, "y": 0.6, "z": 0 }
+        }
+      ]
+    },
+    "enemies": {
+      "basicEnemy": {
+        "name": "BasicEnemy",
+        "tag": "Enemy",
+        "layer": "Enemy",
+        "components": {
+          "SpriteRenderer": {
+            "sortingOrder": 4,
+            "sprite": "Generated via SpriteGenerator.CreateEnemyShip(64, 0)",
+            "color": "#FF4D4D"
+          },
+          "EnemyController": {
+            "enemyType": "Basic",
+            "moveSpeed": 3.0,
+            "scoreValue": 100,
+            "collisionDamage": 20,
+            "destroyY": -6.0
+          },
+          "HealthSystem": {
+            "maxHealth": 25,
+            "destroyOnDeath": true
+          },
+          "BoxCollider2D": {
+            "size": { "x": 0.7, "y": 0.7 },
+            "isTrigger": true
+          },
+          "Rigidbody2D": {
+            "gravityScale": 0,
+            "freezeRotation": true
+          }
+        }
+      },
+      "zigzagEnemy": {
+        "name": "ZigzagEnemy",
+        "tag": "Enemy",
+        "layer": "Enemy",
+        "components": {
+          "SpriteRenderer": {
+            "sortingOrder": 4,
+            "sprite": "Generated via SpriteGenerator.CreateEnemyShip(64, 1)",
+            "color": "#FF9933"
+          },
+          "EnemyController": {
+            "enemyType": "Zigzag",
+            "moveSpeed": 2.5,
+            "scoreValue": 150,
+            "collisionDamage": 25,
+            "zigzagAmplitude": 2.0,
+            "zigzagFrequency": 2.0
+          },
+          "HealthSystem": {
+            "maxHealth": 35,
+            "destroyOnDeath": true
+          },
+          "BoxCollider2D": {
+            "size": { "x": 0.7, "y": 0.7 },
+            "isTrigger": true
+          },
+          "Rigidbody2D": {
+            "gravityScale": 0,
+            "freezeRotation": true
+          }
+        }
+      },
+      "shooterEnemy": {
+        "name": "ShooterEnemy",
+        "tag": "Enemy",
+        "layer": "Enemy",
+        "components": {
+          "SpriteRenderer": {
+            "sortingOrder": 4,
+            "sprite": "Generated via SpriteGenerator.CreateEnemyShip(64, 2)",
+            "color": "#CC33CC"
+          },
+          "EnemyController": {
+            "enemyType": "Shooter",
+            "moveSpeed": 2.0,
+            "scoreValue": 200,
+            "collisionDamage": 30,
+            "fireRate": 2.0,
+            "fireDelay": 1.0
+          },
+          "HealthSystem": {
+            "maxHealth": 50,
+            "destroyOnDeath": true
+          },
+          "BoxCollider2D": {
+            "size": { "x": 0.7, "y": 0.7 },
+            "isTrigger": true
+          },
+          "Rigidbody2D": {
+            "gravityScale": 0,
+            "freezeRotation": true
+          }
+        }
+      }
+    },
+    "bullets": {
+      "playerBullet": {
+        "name": "PlayerBullet",
+        "tag": "PlayerBullet",
+        "layer": "PlayerBullet",
+        "components": {
+          "SpriteRenderer": {
+            "sortingOrder": 3,
+            "sprite": "Generated via SpriteGenerator.CreateBullet(16, true)"
+          },
+          "BulletController": {
+            "speed": 15.0,
+            "lifetime": 3.0,
+            "damage": 25,
+            "isPlayerBullet": true,
+            "playerBulletColor": "#4DFFFF",
+            "enemyBulletColor": "#FF4D4D"
+          },
+          "CircleCollider2D": {
+            "radius": 0.15,
+            "isTrigger": true
+          },
+          "Rigidbody2D": {
+            "gravityScale": 0
+          }
+        }
+      },
+      "enemyBullet": {
+        "name": "EnemyBullet",
+        "tag": "EnemyBullet",
+        "layer": "EnemyBullet",
+        "components": {
+          "SpriteRenderer": {
+            "sortingOrder": 3,
+            "sprite": "Generated via SpriteGenerator.CreateBullet(16, false)"
+          },
+          "BulletController": {
+            "speed": 10.0,
+            "lifetime": 5.0,
+            "damage": 15,
+            "isPlayerBullet": false
+          },
+          "CircleCollider2D": {
+            "radius": 0.15,
+            "isTrigger": true
+          },
+          "Rigidbody2D": {
+            "gravityScale": 0
+          }
+        }
+      }
+    },
+    "powerUps": {
+      "shieldPowerUp": {
+        "name": "ShieldPowerUp",
+        "tag": "PowerUp",
+        "layer": "PowerUp",
+        "components": {
+          "SpriteRenderer": {
+            "sortingOrder": 4,
+            "sprite": "Generated via SpriteGenerator.CreatePowerUp(32, 0)"
+          },
+          "PowerUpController": {
+            "powerUpType": "Shield",
+            "moveSpeed": 2.0,
+            "rotationSpeed": 90.0,
+            "lifetime": 10.0
+          },
+          "CircleCollider2D": {
+            "radius": 0.4,
+            "isTrigger": true
+          }
+        }
+      },
+      "rapidFirePowerUp": {
+        "name": "RapidFirePowerUp",
+        "tag": "PowerUp",
+        "layer": "PowerUp",
+        "components": {
+          "SpriteRenderer": {
+            "sortingOrder": 4,
+            "sprite": "Generated via SpriteGenerator.CreatePowerUp(32, 1)"
+          },
+          "PowerUpController": {
+            "powerUpType": "RapidFire",
+            "moveSpeed": 2.0,
+            "rotationSpeed": 90.0,
+            "lifetime": 10.0
+          },
+          "CircleCollider2D": {
+            "radius": 0.4,
+            "isTrigger": true
+          }
+        }
+      },
+      "healthPowerUp": {
+        "name": "HealthPowerUp",
+        "tag": "PowerUp",
+        "layer": "PowerUp",
+        "components": {
+          "SpriteRenderer": {
+            "sortingOrder": 4,
+            "sprite": "Generated via SpriteGenerator.CreatePowerUp(32, 2)"
+          },
+          "PowerUpController": {
+            "powerUpType": "Health",
+            "moveSpeed": 2.0,
+            "rotationSpeed": 90.0,
+            "lifetime": 10.0,
+            "healthRestoreAmount": 30
+          },
+          "CircleCollider2D": {
+            "radius": 0.4,
+            "isTrigger": true
+          }
+        }
+      }
+    },
+    "explosion": {
+      "name": "Explosion",
+      "components": {
+        "SpriteRenderer": {
+          "sortingOrder": 10,
+          "sprite": "Generated via SpriteGenerator.CreateExplosion()"
+        },
+        "ExplosionEffect": {
+          "lifetime": 0.5
+        }
+      }
+    }
+  },
+  "uiElements": {
+    "gameUI": {
+      "scoreText": {
+        "position": { "x": 10, "y": -10 },
+        "anchor": "TopLeft",
+        "fontSize": 24,
+        "color": "#FFFFFF"
+      },
+      "waveText": {
+        "position": { "x": 0, "y": -10 },
+        "anchor": "TopCenter",
+        "fontSize": 24,
+        "color": "#FFFFFF"
+      },
+      "healthBar": {
+        "position": { "x": -10, "y": -10 },
+        "anchor": "TopRight",
+        "size": { "width": 200, "height": 20 },
+        "fillColor": "#00FF00",
+        "backgroundColor": "#333333"
+      }
+    },
+    "mainMenu": {
+      "title": "SPACE SHOOTER",
+      "buttons": ["PLAY", "SETTINGS", "QUIT"]
+    },
+    "pauseMenu": {
+      "title": "PAUSED",
+      "buttons": ["RESUME", "SETTINGS", "MAIN MENU"]
+    },
+    "gameOverMenu": {
+      "title": "GAME OVER",
+      "buttons": ["RETRY", "MAIN MENU"]
+    }
+  },
+  "layerSetup": {
+    "layers": [
+      "Default",
+      "Player",
+      "Enemy",
+      "PlayerBullet",
+      "EnemyBullet",
+      "PowerUp"
+    ],
+    "collisionMatrix": {
+      "Player": ["Enemy", "EnemyBullet", "PowerUp"],
+      "Enemy": ["Player", "PlayerBullet"],
+      "PlayerBullet": ["Enemy"],
+      "EnemyBullet": ["Player"],
+      "PowerUp": ["Player"]
+    }
+  }
+}
