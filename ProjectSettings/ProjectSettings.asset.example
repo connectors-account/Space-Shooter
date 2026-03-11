@@ -1,0 +1,78 @@
+# Unity ProjectSettings.asset Reference
+# This file shows recommended settings for the Space Shooter game
+# Apply these settings via Edit > Project Settings in Unity
+
+# ============================================
+# Player Settings
+# ============================================
+companyName: YourCompany
+productName: Space Shooter
+applicationIdentifier: com.yourcompany.spaceshooter
+
+# Resolution Settings
+defaultScreenWidth: 1920
+defaultScreenHeight: 1080
+fullscreenMode: 3  # 3 = FullScreenWindow
+runInBackground: 1
+
+# Other Settings
+apiCompatibilityLevel: 6  # .NET Standard 2.1
+scriptingBackend: 0  # Mono
+il2cppStacktraceInformation: 1
+
+# ============================================
+# Tags (Edit > Project Settings > Tags and Layers)
+# ============================================
+Tags:
+  - Player
+  - Enemy
+  - PlayerBullet
+  - EnemyBullet
+  - PowerUp
+
+# ============================================
+# Layers (User Layers start at 8)
+# ============================================
+Layer 8: Player
+Layer 9: Enemies
+Layer 10: PlayerBullets
+Layer 11: EnemyBullets
+Layer 12: PowerUps
+
+# ============================================
+# Sorting Layers (in order)
+# ============================================
+0: Default
+1: Background
+2: Stars
+3: Projectiles
+4: Pickups
+5: Characters
+6: Effects
+
+# ============================================
+# Physics 2D Collision Matrix
+# ============================================
+# Enable collisions between:
+# Player <-> Enemies: YES
+# Player <-> EnemyBullets: YES
+# Player <-> PowerUps: YES
+# Enemies <-> PlayerBullets: YES
+# All other combinations: NO
+
+# ============================================
+# Input Settings (Edit > Project Settings > Input Manager)
+# ============================================
+# Default Unity inputs are sufficient:
+# - Horizontal: A/D or Left/Right arrows
+# - Vertical: W/S or Up/Down arrows
+# - Submit/Fire1: Space (used for shooting)
+# - Cancel: Escape (used for pause)
+
+# ============================================
+# Quality Settings
+# ============================================
+# For 2D game, recommend:
+# - VSync: Every V Blank
+# - Anti Aliasing: 2x Multi Sampling (optional)
+# - Texture Quality: Full Res
