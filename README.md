@@ -1,355 +1,421 @@
 # Space Shooter Game - Unity Project
 
-A simple but fully functional space-shooter game built with Unity for Windows desktop.
+A complete, fully functional space shooter game for Windows desktop built with Unity and C#.
 
-## 🎮 Game Features
-
-- **Player Ship**: Move with WASD or Arrow keys, shoot with Spacebar
-- **Enemy Ships**: Spawn from the top and move downward, some can shoot back
-- **Collision Detection**: Bullets hitting ships, enemies colliding with player
-- **Health System**: Player has 3 health points
-- **Score Tracking**: Earn points by destroying enemies
-- **Difficulty Scaling**: Game gets harder over time
-- **UI System**: Health display, score counter, game over screen
-- **Pause Menu**: Press ESC to pause
-
-## 🎯 Controls
-
-| Action | Key |
-|--------|-----|
-| Move Up | W / Up Arrow |
-| Move Down | S / Down Arrow |
-| Move Left | A / Left Arrow |
-| Move Right | D / Right Arrow |
-| Shoot | Spacebar |
-| Pause | Escape |
-| Restart (Game Over) | R |
+## Table of Contents
+1. [Game Features](#game-features)
+2. [Requirements](#requirements)
+3. [Project Setup](#project-setup)
+4. [Creating Game Objects](#creating-game-objects)
+5. [Scene Configuration](#scene-configuration)
+6. [Building for Windows](#building-for-windows)
+7. [Controls](#controls)
+8. [Troubleshooting](#troubleshooting)
 
 ---
 
-## 📁 Project Structure
+## Game Features
 
-```
-space_shooter_game/
-├── Assets/
-│   └── Scripts/
-│       ├── PlayerController.cs    # Player movement, shooting, health
-│       ├── EnemyController.cs     # Enemy behavior and AI
-│       ├── BulletController.cs    # Bullet movement and collision
-│       ├── GameManager.cs         # Game state, score, flow control
-│       ├── UIManager.cs           # UI elements and displays
-│       └── EnemySpawner.cs        # Enemy wave spawning system
-└── README.md
-```
+- **Player ship** with smooth movement (Arrow keys/WASD) and shooting
+- **Wave-based enemy spawning** with increasing difficulty
+- **Three enemy movement patterns**: Straight, Zigzag, and Sine wave
+- **Power-up system** (Rapid Fire)
+- **Health system** with 3 lives
+- **Scoring system** with persistent high score
+- **Full UI**: Score, health, wave counter, game over screen, pause menu
+- **Parallax scrolling background**
 
 ---
 
-## 🚀 Setup Instructions
+## Requirements
 
-### Prerequisites
+- **Unity Version**: Unity 2021.3 LTS or newer (2022.3 LTS recommended)
+- **Platform**: Windows 10/11
+- **Build Target**: Windows Standalone (x86_64)
 
-- **Unity Hub** installed
-- **Unity Editor** version **2021.3 LTS** or newer (recommended: 2022.3 LTS)
-- Windows 10/11 for building
+---
+
+## Project Setup
 
 ### Step 1: Create New Unity Project
 
 1. Open **Unity Hub**
 2. Click **"New Project"**
-3. Select **"2D Core"** template
-4. Name it `SpaceShooterGame`
-5. Choose a location and click **Create Project**
+3. Select **"2D (Built-in Render Pipeline)"** template
+4. Name it: `SpaceShooterGame`
+5. Choose a location and click **"Create Project"**
 
 ### Step 2: Import Scripts
 
-1. In Unity, navigate to `Assets` folder in the Project window
-2. Create a folder called `Scripts` (Right-click → Create → Folder)
-3. Copy all `.cs` files from this repository's `Assets/Scripts/` folder into `Assets/Scripts/`
-4. Wait for Unity to compile the scripts
+1. Copy all `.cs` files from `Assets/Scripts/` to your Unity project's `Assets/Scripts/` folder
+2. Unity will automatically compile them
 
 ### Step 3: Create Tags
 
-1. Go to **Edit → Project Settings → Tags and Layers**
-2. Under **Tags**, add these new tags:
+1. Go to **Edit > Project Settings > Tags and Layers**
+2. Add the following tags:
    - `Player`
    - `Enemy`
    - `PlayerBullet`
    - `EnemyBullet`
+   - `PowerUp`
 
-### Step 4: Create Player Ship
+### Step 4: Create Sorting Layers
 
-1. **Create Sprite**: Right-click in Hierarchy → **2D Object → Sprites → Triangle**
-2. **Rename** to `Player`
-3. **Set Position**: (0, -3, 0)
-4. **Set Scale**: (0.5, 0.7, 1)
-5. **Set Tag**: `Player`
-6. **Add Components**:
-   - **Rigidbody2D**: Set Body Type to `Kinematic`
-   - **Box Collider 2D**: Check `Is Trigger`
-   - **PlayerController** script (drag from Scripts folder)
-
-#### Create Fire Point for Player:
-1. Right-click on `Player` in Hierarchy → **Create Empty**
-2. Rename to `FirePoint`
-3. Set Position: (0, 0.5, 0)
-
-#### Assign Fire Point:
-1. Select `Player`
-2. In PlayerController component, drag `FirePoint` to the "Fire Point" field
-
-### Step 5: Create Bullet Prefab
-
-1. **Create Sprite**: Right-click in Hierarchy → **2D Object → Sprites → Capsule**
-2. **Rename** to `Bullet`
-3. **Set Scale**: (0.1, 0.3, 1)
-4. **Change Color**: Click on Sprite Renderer → Color → Set to Yellow
-5. **Add Components**:
-   - **Rigidbody2D**: Body Type = `Kinematic`
-   - **Box Collider 2D**: Check `Is Trigger`
-   - **BulletController** script
-
-#### Save as Prefab:
-1. Create `Prefabs` folder in Assets
-2. Drag `Bullet` from Hierarchy into `Prefabs` folder
-3. Delete `Bullet` from Hierarchy (it's now a prefab)
-
-### Step 6: Create Enemy Prefab
-
-1. **Create Sprite**: Right-click in Hierarchy → **2D Object → Sprites → Hexagon Flat-Top**
-2. **Rename** to `Enemy`
-3. **Set Scale**: (0.6, 0.6, 1)
-4. **Set Rotation**: (0, 0, 180) - to face downward
-5. **Change Color**: Set to Red
-6. **Set Tag**: `Enemy`
-7. **Add Components**:
-   - **Rigidbody2D**: Body Type = `Kinematic`
-   - **Polygon Collider 2D**: Check `Is Trigger`
-   - **EnemyController** script
-
-#### Configure Enemy:
-1. In EnemyController, assign the Bullet prefab to "Bullet Prefab" field
-
-#### Save as Prefab:
-1. Drag `Enemy` into `Prefabs` folder
-2. Delete from Hierarchy
-
-### Step 7: Assign Prefab to Player
-
-1. Select `Player` in Hierarchy
-2. In PlayerController, drag `Bullet` prefab to "Bullet Prefab" field
-
-### Step 8: Create Game Manager
-
-1. **Create Empty**: Right-click in Hierarchy → Create Empty
-2. **Rename** to `GameManager`
-3. **Add Component**: GameManager script
-
-### Step 9: Create Enemy Spawner
-
-1. **Create Empty**: Right-click in Hierarchy → Create Empty
-2. **Rename** to `EnemySpawner`
-3. **Add Component**: EnemySpawner script
-4. **Configure**: 
-   - Drag Enemy prefab to "Enemy Prefabs" array (Size: 1, Element 0: Enemy)
-
-### Step 10: Create UI
-
-#### Create Canvas:
-1. Right-click in Hierarchy → **UI → Canvas**
-2. Set **UI Scale Mode** to "Scale With Screen Size"
-3. Set Reference Resolution: 1920 x 1080
-
-#### Create Score Text:
-1. Right-click on Canvas → **UI → Legacy → Text**
-2. Rename to `ScoreText`
-3. Set Anchor to **Top-Left**
-4. Position: (120, -40)
-5. Size: (200, 50)
-6. Text: "Score: 0"
-7. Font Size: 32
-8. Color: White
-
-#### Create Health Text:
-1. Right-click on Canvas → **UI → Legacy → Text**
-2. Rename to `HealthText`
-3. Set Anchor to **Top-Right**
-4. Position: (-120, -40)
-5. Size: (200, 50)
-6. Text: "Health: 3/3"
-7. Font Size: 32
-8. Color: White
-9. Alignment: Right
-
-#### Create Game Over Panel:
-1. Right-click on Canvas → **UI → Panel**
-2. Rename to `GameOverPanel`
-3. Set Color: (0, 0, 0, 200) - semi-transparent black
-
-Inside GameOverPanel, add:
-- **Text** "GAME OVER" (FontSize: 72, centered)
-- **Text** named `GameOverScoreText` - "Final Score: 0"
-- **Text** named `HighScoreText` - "High Score: 0"
-- **Button** with text "RESTART" 
-- **Button** with text "QUIT"
-
-#### Create Pause Menu Panel:
-1. Right-click on Canvas → **UI → Panel**
-2. Rename to `PauseMenuPanel`
-3. Add Text "PAUSED"
-4. Add "RESUME" and "QUIT" buttons
-
-### Step 11: Create UI Manager
-
-1. **Create Empty** under Canvas, rename to `UIManager`
-2. **Add Component**: UIManager script
-3. **Assign UI Elements**:
-   - Score Text → ScoreText
-   - Health Text → HealthText
-   - Game Over Panel → GameOverPanel
-   - Game Over Score Text → GameOverScoreText
-   - High Score Text → HighScoreText
-   - Pause Menu Panel → PauseMenuPanel
-
-### Step 12: Connect Button Events
-
-For Restart Button:
-1. Select the Restart button
-2. In OnClick(), add UIManager → OnRestartButtonClicked
-
-For Resume Button:
-1. Add UIManager → OnResumeButtonClicked
-
-For Quit Buttons:
-1. Add UIManager → OnQuitButtonClicked
-
-### Step 13: Camera Setup
-
-1. Select **Main Camera**
-2. Set Background color to dark blue: (0.05, 0.05, 0.15)
-3. Ensure Projection is **Orthographic**
-4. Size: 5
+1. In **Tags and Layers**, go to **Sorting Layers**
+2. Add layers in this order (bottom to top):
+   - `Background` (Order: -10)
+   - `Default` (Order: 0)
+   - `Enemies` (Order: 1)
+   - `Player` (Order: 2)
+   - `Projectiles` (Order: 3)
+   - `UI` (Order: 10)
 
 ---
 
-## 🔨 Building for Windows
+## Creating Game Objects
+
+### Player Ship
+
+1. **Create the Player**:
+   - Right-click in Hierarchy > **2D Object > Sprites > Square**
+   - Rename to `Player`
+   - Set Position: `(0, -3, 0)`
+   - Set Scale: `(0.8, 1, 1)` (ship-like shape)
+   - Color: **Green** (in Sprite Renderer)
+
+2. **Add Components**:
+   - Add **BoxCollider2D** (Is Trigger: ✓)
+   - Add **Rigidbody2D** (Body Type: Kinematic)
+   - Add **PlayerController** script
+
+3. **Create Fire Point**:
+   - Create empty child object named `FirePoint`
+   - Set Position: `(0, 0.6, 0)` (front of ship)
+
+4. **Assign the Tag**: Set tag to `Player`
+
+### Player Bullet
+
+1. **Create the Bullet**:
+   - Right-click in Hierarchy > **2D Object > Sprites > Square**
+   - Rename to `PlayerBullet`
+   - Set Scale: `(0.1, 0.3, 1)`
+   - Color: **Yellow**
+
+2. **Add Components**:
+   - Add **BoxCollider2D** (Is Trigger: ✓)
+   - Add **Rigidbody2D** (Body Type: Kinematic)
+   - Add **Bullet** script
+   - Set `Is Player Bullet`: ✓
+
+3. **Create Prefab**:
+   - Drag to `Assets/Prefabs/` folder
+   - Delete from scene
+
+### Enemy Bullet
+
+1. **Duplicate PlayerBullet prefab** and rename to `EnemyBullet`
+2. Color: **Red**
+3. In Bullet script: `Is Player Bullet`: ✗
+
+### Enemy Ship
+
+1. **Create the Enemy**:
+   - Right-click in Hierarchy > **2D Object > Sprites > Square**
+   - Rename to `Enemy`
+   - Set Scale: `(0.8, 0.8, 1)`
+   - Color: **Red**
+
+2. **Add Components**:
+   - Add **BoxCollider2D** (Is Trigger: ✓)
+   - Add **Rigidbody2D** (Body Type: Kinematic)
+   - Add **Enemy** script
+
+3. **Configure Enemy Script**:
+   - Drag `EnemyBullet` prefab to `Enemy Bullet Prefab` field
+   - Set `Score Value`: 100
+   - Set `Power Up Drop Chance`: 0.15
+
+4. **Assign Tag**: Set tag to `Enemy`
+
+5. **Create Prefab**: Drag to `Assets/Prefabs/`
+
+### Power-Up
+
+1. **Create the Power-Up**:
+   - Right-click in Hierarchy > **2D Object > Sprites > Square**
+   - Rename to `PowerUp_RapidFire`
+   - Set Scale: `(0.5, 0.5, 1)`
+   - Color: **Cyan/Light Blue**
+
+2. **Add Components**:
+   - Add **BoxCollider2D** (Is Trigger: ✓)
+   - Add **Rigidbody2D** (Body Type: Kinematic)
+   - Add **PowerUp** script
+   - Type: `RapidFire`
+
+3. **Assign Tag**: Set tag to `PowerUp`
+
+4. **Create Prefab**: Drag to `Assets/Prefabs/`
+
+### Enemy Spawner
+
+1. **Create Empty Object**:
+   - Right-click in Hierarchy > **Create Empty**
+   - Rename to `EnemySpawner`
+   - Position: `(0, 0, 0)`
+
+2. **Add EnemySpawner Script**:
+   - Drag `Enemy` prefab to `Enemy Prefab` field
+
+### Game Manager
+
+1. **Create Empty Object**:
+   - Right-click in Hierarchy > **Create Empty**
+   - Rename to `GameManager`
+   - Position: `(0, 0, 0)`
+
+2. **Add GameManager Script**
+
+---
+
+## Scene Configuration
+
+### Camera Setup
+
+1. Select **Main Camera**
+2. Set **Background Color**: Dark blue `(0.05, 0.05, 0.15, 1)`
+3. Set **Size**: 5 (for orthographic camera)
+4. Set **Position**: `(0, 0, -10)`
+
+### Background (Optional Parallax)
+
+1. **Create Background**:
+   - Right-click > **2D Object > Sprites > Square**
+   - Rename to `Background`
+   - Scale: `(20, 40, 1)` (covers screen)
+   - Color: Dark purple/blue gradient
+   - Sorting Layer: `Background`
+   - Order in Layer: -10
+
+2. **For Parallax Effect**:
+   - Duplicate background
+   - Position second copy at Y = 40 (directly above)
+   - Add **BackgroundScroller** script to both
+   - Set `Background Height`: 40
+
+### UI Setup
+
+1. **Create Canvas**:
+   - Right-click > **UI > Canvas**
+   - Canvas Scaler: Scale With Screen Size
+   - Reference Resolution: 1920 x 1080
+
+2. **Create HUD Panel** (child of Canvas):
+   - Add **Panel** (transparent background)
+   - Anchor: Top-Left
+
+3. **Add UI Elements** (children of HUD Panel):
+
+   **Score Text**:
+   - UI > Text (or TextMeshPro)
+   - Position: Top-left
+   - Text: "Score: 0"
+   - Font Size: 24
+   - Color: White
+
+   **High Score Text**:
+   - Position: Below Score
+   - Text: "High Score: 0"
+   - Font Size: 18
+   - Color: Yellow
+
+   **Health Text**:
+   - Position: Top-right
+   - Text: "Health: ♥ ♥ ♥"
+   - Font Size: 24
+   - Color: Red
+
+   **Wave Text**:
+   - Position: Top-center
+   - Text: "Wave 1"
+   - Font Size: 28
+   - Color: White
+
+4. **Create Game Over Panel**:
+   - Add Panel (dark semi-transparent background)
+   - Center on screen
+   - Add child texts:
+     - "GAME OVER" (large, centered)
+     - "Final Score: 0"
+     - "Press R to Restart"
+   - Start **Disabled** (uncheck GameObject active)
+
+5. **Create Pause Panel** (similar to Game Over):
+   - "PAUSED"
+   - "Press ESC to Resume"
+   - Start **Disabled**
+
+6. **Create UI Controller**:
+   - Add empty child to Canvas named `UIController`
+   - Add **UIController** script
+   - Drag all text references to the appropriate fields
+
+7. **Connect to GameManager**:
+   - Select GameManager object
+   - Drag UIController to the `UI Controller` field
+
+---
+
+## Connecting Everything
+
+### Player Configuration
+
+1. Select `Player` in hierarchy
+2. In **PlayerController**:
+   - Drag `PlayerBullet` prefab to `Bullet Prefab`
+   - Drag `FirePoint` child object to `Fire Point`
+   - Move Speed: 8
+   - Fire Rate: 0.3
+   - Max Health: 3
+
+### Enemy Configuration
+
+1. Open `Enemy` prefab
+2. In **Enemy** script:
+   - Drag `EnemyBullet` prefab to `Enemy Bullet Prefab`
+   - Drag `PowerUp_RapidFire` prefab to `Power Up Prefab`
+   - Power Up Drop Chance: 0.15
+   - Score Value: 100
+
+### Spawner Configuration
+
+1. Select `EnemySpawner`
+2. In **EnemySpawner** script:
+   - Drag `Enemy` prefab to `Enemy Prefab`
+   - Min X: -6
+   - Max X: 6
+   - Spawn Y: 7
+   - Enemies Per Wave: 5
+
+---
+
+## Building for Windows
 
 ### Step 1: Configure Build Settings
 
-1. Go to **File → Build Settings**
-2. Select **Windows, Mac, Linux** platform
-3. Click **Switch Platform** (if not already selected)
-4. Click **Add Open Scenes** to add your game scene
+1. Go to **File > Build Settings**
+2. Select **Windows, Mac, Linux** (or PC, Mac & Linux Standalone)
+3. Target Platform: **Windows**
+4. Architecture: **x86_64**
+5. Click **Add Open Scenes** to include your game scene
 
-### Step 2: Configure Player Settings
+### Step 2: Player Settings
 
 1. Click **Player Settings**
-2. Set **Company Name** and **Product Name**
-3. Under **Resolution and Presentation**:
-   - Set Default Screen Width: 1280
-   - Set Default Screen Height: 720
-   - Fullscreen Mode: Windowed
-4. Under **Other Settings**:
-   - Scripting Backend: Mono or IL2CPP
-   - Target Architecture: x86_64
+2. **Product Name**: "Space Shooter"
+3. **Company Name**: Your name
+4. **Resolution and Presentation**:
+   - Fullscreen Mode: Windowed (or your preference)
+   - Default Screen Width: 1280
+   - Default Screen Height: 720
+5. **Icon** (optional): Add your game icon
 
 ### Step 3: Build
 
-1. Back in Build Settings, click **Build**
-2. Create/select a folder for the build (e.g., `Builds/Windows`)
-3. Name your executable (e.g., `SpaceShooter.exe`)
-4. Click **Save** and wait for build to complete
+1. Click **Build**
+2. Create a new folder (e.g., `SpaceShooter_Build`)
+3. Choose filename: `SpaceShooter.exe`
+4. Click **Save**
+5. Wait for build to complete
 
 ### Build Output
 
 Your build folder will contain:
 ```
-Builds/Windows/
-├── SpaceShooter.exe           # Main executable
-├── SpaceShooter_Data/         # Game data folder
-├── UnityCrashHandler64.exe    # Crash handler
-└── UnityPlayer.dll            # Unity runtime
+SpaceShooter_Build/
+├── SpaceShooter.exe          (Main executable)
+├── SpaceShooter_Data/        (Game data folder)
+├── MonoBleedingEdge/         (Mono runtime)
+└── UnityCrashHandler64.exe   (Crash handler)
 ```
 
-**Distribute** the entire folder contents together.
+**Important**: Distribute the ENTIRE folder, not just the .exe file!
 
 ---
 
-## 🎨 Optional Enhancements
+## Controls
 
-### Add Sound Effects
-1. Import audio files into `Assets/Audio`
-2. Add AudioSource components to relevant objects
-3. Play sounds on shoot, hit, explosion events
-
-### Add Particle Effects
-1. Create particle systems for explosions
-2. Instantiate on enemy/player death
-
-### Add Background
-1. Create a space background sprite
-2. Add scrolling script for parallax effect
-
-### Add Power-ups
-1. Create power-up prefabs (health, speed boost, rapid fire)
-2. Spawn randomly and handle collection
+| Key | Action |
+|-----|--------|
+| Arrow Keys / WASD | Move ship |
+| Space | Shoot |
+| Escape | Pause/Resume |
+| R (Game Over) | Restart |
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
-### Scripts not compiling
-- Ensure all script files are in `Assets/Scripts`
-- Check for any missing `using` statements
-- Restart Unity Editor
+### Common Issues
 
-### Bullets not spawning
-- Verify Bullet Prefab is assigned in PlayerController
-- Check FirePoint is assigned and positioned correctly
+**"NullReferenceException" errors:**
+- Ensure all prefab references are assigned in Inspector
+- Check that GameManager has UIController reference
+- Verify tags are created and assigned
 
-### Enemies not taking damage
-- Verify tags are set correctly (`Enemy`, `PlayerBullet`)
-- Ensure colliders are set as triggers
+**Player doesn't move:**
+- Check PlayerController script is attached
+- Verify Rigidbody2D is set to Kinematic
+- Ensure Time.timeScale is 1
 
-### UI not updating
-- Check UIManager singleton is in scene
-- Verify all UI element references are assigned
+**Bullets don't hit enemies:**
+- Verify both have Collider2D with "Is Trigger" checked
+- Check tags are correctly assigned
+- Ensure bullet's isPlayerBullet is set correctly
 
-### Game doesn't pause
-- Ensure GameManager is in the scene
-- Check that Time.timeScale is being modified
+**Enemies don't spawn:**
+- Check EnemySpawner has Enemy Prefab assigned
+- Verify spawner is active in scene
+- Check spawn Y position is above camera view
 
----
+**UI not updating:**
+- Ensure GameManager has UIController reference
+- Verify UIController has all text fields assigned
+- Check Canvas is set up correctly
 
-## 📋 Unity Version Compatibility
+### Performance Tips
 
-| Unity Version | Status |
-|---------------|--------|
-| 2021.3 LTS | ✅ Recommended |
-| 2022.3 LTS | ✅ Recommended |
-| 2023.x | ✅ Compatible |
-| 2020.x | ⚠️ Should work |
-| 2019.x | ⚠️ May need adjustments |
-
----
-
-## 📜 License
-
-This project is provided for educational purposes. Feel free to modify and use it for your own projects.
+- Keep bullet lifetime short (3 seconds)
+- Destroy enemies/bullets when off-screen
+- Use object pooling for better performance (advanced)
 
 ---
 
-## 🎯 Quick Start Checklist
+## Script Overview
 
-- [ ] Create new Unity 2D project
-- [ ] Import all scripts to Assets/Scripts
-- [ ] Create required tags (Player, Enemy, PlayerBullet, EnemyBullet)
-- [ ] Create Player with PlayerController
-- [ ] Create Bullet prefab with BulletController
-- [ ] Create Enemy prefab with EnemyController
-- [ ] Create GameManager GameObject
-- [ ] Create EnemySpawner and assign Enemy prefab
-- [ ] Create UI Canvas with all elements
-- [ ] Create UIManager and assign UI references
-- [ ] Assign Bullet prefab to Player and Enemy
-- [ ] Test in Play mode
-- [ ] Build for Windows
+| Script | Purpose |
+|--------|---------|
+| `PlayerController.cs` | Player movement, shooting, health |
+| `Bullet.cs` | Bullet movement and collision |
+| `Enemy.cs` | Enemy AI, movement patterns, shooting |
+| `EnemySpawner.cs` | Wave-based enemy spawning |
+| `PowerUp.cs` | Power-up collection and effects |
+| `GameManager.cs` | Game state, scoring, UI coordination |
+| `UIController.cs` | All UI element management |
+| `BackgroundScroller.cs` | Parallax background scrolling |
+
+---
+
+## License
+
+This project is provided as-is for educational purposes. Feel free to modify and use it for your own projects.
+
+---
+
+## Version
+
+- **Version**: 1.0
+- **Unity Version**: 2021.3+ LTS
+- **Last Updated**: March 2026
