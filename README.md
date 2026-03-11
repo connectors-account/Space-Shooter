@@ -1,421 +1,256 @@
-# Space Shooter Game - Unity Project
+# Space Shooter Game
 
-A complete, fully functional space shooter game for Windows desktop built with Unity and C#.
+A classic arcade-style space shooter game built with Unity for Windows desktop.
 
-## Table of Contents
-1. [Game Features](#game-features)
-2. [Requirements](#requirements)
-3. [Project Setup](#project-setup)
-4. [Creating Game Objects](#creating-game-objects)
-5. [Scene Configuration](#scene-configuration)
-6. [Building for Windows](#building-for-windows)
-7. [Controls](#controls)
-8. [Troubleshooting](#troubleshooting)
+![Space Shooter Banner](Docs/banner_placeholder.png)
 
----
+## 🎮 Game Features
 
-## Game Features
+- **Wave-Based Combat**: Battle through 10 waves of increasingly difficult enemies
+- **Multiple Enemy Types**: 5 unique enemy behaviors (Basic, Zigzag, Circular, Charger, Boss)
+- **Power-Up System**: Collect shields, rapid fire, health, extra lives, and score bonuses
+- **Scoring System**: Combo multipliers and high score tracking
+- **Boss Battles**: Face challenging boss enemies every 5 waves
+- **Parallax Scrolling**: Immersive starfield background
+- **Full Audio Support**: Music and sound effects (bring your own assets)
 
-- **Player ship** with smooth movement (Arrow keys/WASD) and shooting
-- **Wave-based enemy spawning** with increasing difficulty
-- **Three enemy movement patterns**: Straight, Zigzag, and Sine wave
-- **Power-up system** (Rapid Fire)
-- **Health system** with 3 lives
-- **Scoring system** with persistent high score
-- **Full UI**: Score, health, wave counter, game over screen, pause menu
-- **Parallax scrolling background**
+## 🎯 How to Play
 
----
+### Controls
 
-## Requirements
+| Action | Key |
+|--------|-----|
+| Move Up | W / ↑ Arrow |
+| Move Down | S / ↓ Arrow |
+| Move Left | A / ← Arrow |
+| Move Right | D / → Arrow |
+| Shoot | Space |
+| Pause | Escape |
 
-- **Unity Version**: Unity 2021.3 LTS or newer (2022.3 LTS recommended)
-- **Platform**: Windows 10/11
-- **Build Target**: Windows Standalone (x86_64)
+### Objective
 
----
+- Destroy all enemies in each wave to progress
+- Collect power-ups to gain advantages
+- Survive all 10 waves to achieve victory
+- Aim for the highest score possible!
 
-## Project Setup
+### Power-Ups
 
-### Step 1: Create New Unity Project
+| Power-Up | Color | Effect |
+|----------|-------|--------|
+| Shield | Cyan | Temporary invincibility |
+| Rapid Fire | Yellow | Increased fire rate |
+| Health | Green | Restore health |
+| Extra Life | Magenta | Gain an extra life |
+| Score Bonus | White | Instant score boost |
 
-1. Open **Unity Hub**
-2. Click **"New Project"**
-3. Select **"2D (Built-in Render Pipeline)"** template
-4. Name it: `SpaceShooterGame`
-5. Choose a location and click **"Create Project"**
+### Tips
 
-### Step 2: Import Scripts
+- Keep moving to avoid enemy bullets
+- Prioritize Charger enemies - they track your position
+- Save your lives for boss battles
+- Build combos by defeating enemies quickly for higher scores
 
-1. Copy all `.cs` files from `Assets/Scripts/` to your Unity project's `Assets/Scripts/` folder
-2. Unity will automatically compile them
+## 📁 Project Structure
 
-### Step 3: Create Tags
-
-1. Go to **Edit > Project Settings > Tags and Layers**
-2. Add the following tags:
-   - `Player`
-   - `Enemy`
-   - `PlayerBullet`
-   - `EnemyBullet`
-   - `PowerUp`
-
-### Step 4: Create Sorting Layers
-
-1. In **Tags and Layers**, go to **Sorting Layers**
-2. Add layers in this order (bottom to top):
-   - `Background` (Order: -10)
-   - `Default` (Order: 0)
-   - `Enemies` (Order: 1)
-   - `Player` (Order: 2)
-   - `Projectiles` (Order: 3)
-   - `UI` (Order: 10)
-
----
-
-## Creating Game Objects
-
-### Player Ship
-
-1. **Create the Player**:
-   - Right-click in Hierarchy > **2D Object > Sprites > Square**
-   - Rename to `Player`
-   - Set Position: `(0, -3, 0)`
-   - Set Scale: `(0.8, 1, 1)` (ship-like shape)
-   - Color: **Green** (in Sprite Renderer)
-
-2. **Add Components**:
-   - Add **BoxCollider2D** (Is Trigger: ✓)
-   - Add **Rigidbody2D** (Body Type: Kinematic)
-   - Add **PlayerController** script
-
-3. **Create Fire Point**:
-   - Create empty child object named `FirePoint`
-   - Set Position: `(0, 0.6, 0)` (front of ship)
-
-4. **Assign the Tag**: Set tag to `Player`
-
-### Player Bullet
-
-1. **Create the Bullet**:
-   - Right-click in Hierarchy > **2D Object > Sprites > Square**
-   - Rename to `PlayerBullet`
-   - Set Scale: `(0.1, 0.3, 1)`
-   - Color: **Yellow**
-
-2. **Add Components**:
-   - Add **BoxCollider2D** (Is Trigger: ✓)
-   - Add **Rigidbody2D** (Body Type: Kinematic)
-   - Add **Bullet** script
-   - Set `Is Player Bullet`: ✓
-
-3. **Create Prefab**:
-   - Drag to `Assets/Prefabs/` folder
-   - Delete from scene
-
-### Enemy Bullet
-
-1. **Duplicate PlayerBullet prefab** and rename to `EnemyBullet`
-2. Color: **Red**
-3. In Bullet script: `Is Player Bullet`: ✗
-
-### Enemy Ship
-
-1. **Create the Enemy**:
-   - Right-click in Hierarchy > **2D Object > Sprites > Square**
-   - Rename to `Enemy`
-   - Set Scale: `(0.8, 0.8, 1)`
-   - Color: **Red**
-
-2. **Add Components**:
-   - Add **BoxCollider2D** (Is Trigger: ✓)
-   - Add **Rigidbody2D** (Body Type: Kinematic)
-   - Add **Enemy** script
-
-3. **Configure Enemy Script**:
-   - Drag `EnemyBullet` prefab to `Enemy Bullet Prefab` field
-   - Set `Score Value`: 100
-   - Set `Power Up Drop Chance`: 0.15
-
-4. **Assign Tag**: Set tag to `Enemy`
-
-5. **Create Prefab**: Drag to `Assets/Prefabs/`
-
-### Power-Up
-
-1. **Create the Power-Up**:
-   - Right-click in Hierarchy > **2D Object > Sprites > Square**
-   - Rename to `PowerUp_RapidFire`
-   - Set Scale: `(0.5, 0.5, 1)`
-   - Color: **Cyan/Light Blue**
-
-2. **Add Components**:
-   - Add **BoxCollider2D** (Is Trigger: ✓)
-   - Add **Rigidbody2D** (Body Type: Kinematic)
-   - Add **PowerUp** script
-   - Type: `RapidFire`
-
-3. **Assign Tag**: Set tag to `PowerUp`
-
-4. **Create Prefab**: Drag to `Assets/Prefabs/`
-
-### Enemy Spawner
-
-1. **Create Empty Object**:
-   - Right-click in Hierarchy > **Create Empty**
-   - Rename to `EnemySpawner`
-   - Position: `(0, 0, 0)`
-
-2. **Add EnemySpawner Script**:
-   - Drag `Enemy` prefab to `Enemy Prefab` field
-
-### Game Manager
-
-1. **Create Empty Object**:
-   - Right-click in Hierarchy > **Create Empty**
-   - Rename to `GameManager`
-   - Position: `(0, 0, 0)`
-
-2. **Add GameManager Script**
-
----
-
-## Scene Configuration
-
-### Camera Setup
-
-1. Select **Main Camera**
-2. Set **Background Color**: Dark blue `(0.05, 0.05, 0.15, 1)`
-3. Set **Size**: 5 (for orthographic camera)
-4. Set **Position**: `(0, 0, -10)`
-
-### Background (Optional Parallax)
-
-1. **Create Background**:
-   - Right-click > **2D Object > Sprites > Square**
-   - Rename to `Background`
-   - Scale: `(20, 40, 1)` (covers screen)
-   - Color: Dark purple/blue gradient
-   - Sorting Layer: `Background`
-   - Order in Layer: -10
-
-2. **For Parallax Effect**:
-   - Duplicate background
-   - Position second copy at Y = 40 (directly above)
-   - Add **BackgroundScroller** script to both
-   - Set `Background Height`: 40
-
-### UI Setup
-
-1. **Create Canvas**:
-   - Right-click > **UI > Canvas**
-   - Canvas Scaler: Scale With Screen Size
-   - Reference Resolution: 1920 x 1080
-
-2. **Create HUD Panel** (child of Canvas):
-   - Add **Panel** (transparent background)
-   - Anchor: Top-Left
-
-3. **Add UI Elements** (children of HUD Panel):
-
-   **Score Text**:
-   - UI > Text (or TextMeshPro)
-   - Position: Top-left
-   - Text: "Score: 0"
-   - Font Size: 24
-   - Color: White
-
-   **High Score Text**:
-   - Position: Below Score
-   - Text: "High Score: 0"
-   - Font Size: 18
-   - Color: Yellow
-
-   **Health Text**:
-   - Position: Top-right
-   - Text: "Health: ♥ ♥ ♥"
-   - Font Size: 24
-   - Color: Red
-
-   **Wave Text**:
-   - Position: Top-center
-   - Text: "Wave 1"
-   - Font Size: 28
-   - Color: White
-
-4. **Create Game Over Panel**:
-   - Add Panel (dark semi-transparent background)
-   - Center on screen
-   - Add child texts:
-     - "GAME OVER" (large, centered)
-     - "Final Score: 0"
-     - "Press R to Restart"
-   - Start **Disabled** (uncheck GameObject active)
-
-5. **Create Pause Panel** (similar to Game Over):
-   - "PAUSED"
-   - "Press ESC to Resume"
-   - Start **Disabled**
-
-6. **Create UI Controller**:
-   - Add empty child to Canvas named `UIController`
-   - Add **UIController** script
-   - Drag all text references to the appropriate fields
-
-7. **Connect to GameManager**:
-   - Select GameManager object
-   - Drag UIController to the `UI Controller` field
-
----
-
-## Connecting Everything
-
-### Player Configuration
-
-1. Select `Player` in hierarchy
-2. In **PlayerController**:
-   - Drag `PlayerBullet` prefab to `Bullet Prefab`
-   - Drag `FirePoint` child object to `Fire Point`
-   - Move Speed: 8
-   - Fire Rate: 0.3
-   - Max Health: 3
-
-### Enemy Configuration
-
-1. Open `Enemy` prefab
-2. In **Enemy** script:
-   - Drag `EnemyBullet` prefab to `Enemy Bullet Prefab`
-   - Drag `PowerUp_RapidFire` prefab to `Power Up Prefab`
-   - Power Up Drop Chance: 0.15
-   - Score Value: 100
-
-### Spawner Configuration
-
-1. Select `EnemySpawner`
-2. In **EnemySpawner** script:
-   - Drag `Enemy` prefab to `Enemy Prefab`
-   - Min X: -6
-   - Max X: 6
-   - Spawn Y: 7
-   - Enemies Per Wave: 5
-
----
-
-## Building for Windows
-
-### Step 1: Configure Build Settings
-
-1. Go to **File > Build Settings**
-2. Select **Windows, Mac, Linux** (or PC, Mac & Linux Standalone)
-3. Target Platform: **Windows**
-4. Architecture: **x86_64**
-5. Click **Add Open Scenes** to include your game scene
-
-### Step 2: Player Settings
-
-1. Click **Player Settings**
-2. **Product Name**: "Space Shooter"
-3. **Company Name**: Your name
-4. **Resolution and Presentation**:
-   - Fullscreen Mode: Windowed (or your preference)
-   - Default Screen Width: 1280
-   - Default Screen Height: 720
-5. **Icon** (optional): Add your game icon
-
-### Step 3: Build
-
-1. Click **Build**
-2. Create a new folder (e.g., `SpaceShooter_Build`)
-3. Choose filename: `SpaceShooter.exe`
-4. Click **Save**
-5. Wait for build to complete
-
-### Build Output
-
-Your build folder will contain:
 ```
-SpaceShooter_Build/
-├── SpaceShooter.exe          (Main executable)
-├── SpaceShooter_Data/        (Game data folder)
-├── MonoBleedingEdge/         (Mono runtime)
-└── UnityCrashHandler64.exe   (Crash handler)
+space_shooter_game/
+├── Assets/
+│   ├── Scripts/
+│   │   ├── Core/           # GameManager, ObjectPooler
+│   │   ├── Player/         # PlayerController, PlayerShield
+│   │   ├── Enemy/          # EnemyBase, BossEnemy, EnemySpawner
+│   │   ├── Combat/         # Bullet, HealthSystem, DamageOnContact
+│   │   ├── Systems/        # WaveSpawner, ScoreManager, PowerUp, Parallax
+│   │   ├── UI/             # UIManager, MainMenu, HealthBarUI
+│   │   └── Audio/          # AudioManager, SoundEffectPlayer
+│   ├── Prefabs/            # Game object prefabs
+│   ├── Sprites/            # 2D sprite assets
+│   ├── Scenes/             # MainMenu, GameScene
+│   ├── Audio/              # Music and sound effects
+│   └── Materials/          # Materials (optional)
+├── ProjectSettings/        # Unity project settings
+├── Docs/                   # Documentation
+│   ├── PREFAB_DEFINITIONS.md
+│   ├── ASSET_GUIDELINES.md
+│   ├── SCENE_SETUP.md
+│   └── BUILD_INSTRUCTIONS.md
+└── README.md
 ```
 
-**Important**: Distribute the ENTIRE folder, not just the .exe file!
+## 🚀 Quick Start
 
----
+### Prerequisites
 
-## Controls
+- Unity 2021.3 LTS or newer (2022.3 LTS recommended)
+- Windows Build Support module installed
+- TextMeshPro package (install via Package Manager)
 
-| Key | Action |
-|-----|--------|
-| Arrow Keys / WASD | Move ship |
-| Space | Shoot |
-| Escape | Pause/Resume |
-| R (Game Over) | Restart |
+### Setup Steps
 
----
+1. **Create Unity Project**
+   - Open Unity Hub
+   - Create new 2D project
+   - Name it "SpaceShooter"
 
-## Troubleshooting
+2. **Import Scripts**
+   - Copy all `.cs` files from `Assets/Scripts/` to your Unity project
+   - Maintain the folder structure
 
-### Common Issues
+3. **Configure Project**
+   - Add required Tags: Player, Enemy, PlayerBullet, EnemyBullet, PowerUp
+   - Add Layers: Player, Enemies, PlayerBullets, EnemyBullets, PowerUps
+   - Configure Physics 2D collision matrix
+   - Add Sorting Layers: Background, Stars, Projectiles, Pickups, Characters, Effects
 
-**"NullReferenceException" errors:**
-- Ensure all prefab references are assigned in Inspector
-- Check that GameManager has UIController reference
-- Verify tags are created and assigned
+4. **Create Assets**
+   - Create or import sprites (see `Docs/ASSET_GUIDELINES.md`)
+   - Create prefabs (see `Docs/PREFAB_DEFINITIONS.md`)
 
-**Player doesn't move:**
-- Check PlayerController script is attached
-- Verify Rigidbody2D is set to Kinematic
-- Ensure Time.timeScale is 1
+5. **Set Up Scenes**
+   - Create MainMenu and GameScene (see `Docs/SCENE_SETUP.md`)
 
-**Bullets don't hit enemies:**
-- Verify both have Collider2D with "Is Trigger" checked
-- Check tags are correctly assigned
-- Ensure bullet's isPlayerBullet is set correctly
+6. **Build**
+   - File > Build Settings
+   - Add both scenes (MainMenu first)
+   - Select Windows platform
+   - Click Build
 
-**Enemies don't spawn:**
-- Check EnemySpawner has Enemy Prefab assigned
-- Verify spawner is active in scene
-- Check spawn Y position is above camera view
+For detailed instructions, see `Docs/BUILD_INSTRUCTIONS.md`.
 
-**UI not updating:**
-- Ensure GameManager has UIController reference
-- Verify UIController has all text fields assigned
-- Check Canvas is set up correctly
+## 📄 Documentation
 
-### Performance Tips
+| Document | Description |
+|----------|-------------|
+| [PREFAB_DEFINITIONS.md](Docs/PREFAB_DEFINITIONS.md) | Detailed prefab specifications |
+| [ASSET_GUIDELINES.md](Docs/ASSET_GUIDELINES.md) | Sprite and audio asset specs |
+| [SCENE_SETUP.md](Docs/SCENE_SETUP.md) | Scene configuration guide |
+| [BUILD_INSTRUCTIONS.md](Docs/BUILD_INSTRUCTIONS.md) | Step-by-step build guide |
 
-- Keep bullet lifetime short (3 seconds)
-- Destroy enemies/bullets when off-screen
-- Use object pooling for better performance (advanced)
+## 🎨 Creating Your Own Assets
 
----
+### Sprites
 
-## Script Overview
+You can create simple sprites using:
+- Unity's built-in sprite creator
+- Free tools like Aseprite, GIMP, or Piskel
+- Free asset packs from Kenney.nl or OpenGameArt.org
 
-| Script | Purpose |
-|--------|---------|
-| `PlayerController.cs` | Player movement, shooting, health |
-| `Bullet.cs` | Bullet movement and collision |
-| `Enemy.cs` | Enemy AI, movement patterns, shooting |
-| `EnemySpawner.cs` | Wave-based enemy spawning |
-| `PowerUp.cs` | Power-up collection and effects |
-| `GameManager.cs` | Game state, scoring, UI coordination |
-| `UIController.cs` | All UI element management |
-| `BackgroundScroller.cs` | Parallax background scrolling |
+### Audio
 
----
+Find free audio at:
+- Freesound.org
+- OpenGameArt.org
+- Incompetech.com (royalty-free music)
 
-## License
+## 🛠️ Customization
+
+### Adjusting Difficulty
+
+In `WaveSpawner.cs`:
+```csharp
+public int totalWaves = 10;           // Number of waves
+public float difficultyMultiplier = 1.1f;  // Enemy count increase per wave
+public int baseEnemyCount = 5;        // Starting enemies per wave
+```
+
+### Adjusting Player
+
+In `PlayerController.cs`:
+```csharp
+public float moveSpeed = 8f;          // Movement speed
+public float fireRate = 0.2f;         // Seconds between shots
+public float rapidFireRate = 0.1f;    // Fire rate with power-up
+```
+
+### Adjusting Power-Ups
+
+In `PowerUpSpawner.cs`:
+```csharp
+public float spawnChance = 0.15f;     // 15% chance on enemy death
+public float shieldWeight = 20f;       // Relative spawn weights
+public float rapidFireWeight = 25f;
+public float healthWeight = 30f;
+public float extraLifeWeight = 10f;
+public float scoreBonusWeight = 15f;
+```
+
+## 🎯 Game Flow
+
+```
+MainMenu
+    │
+    ├── Play → GameScene
+    │              │
+    │              ├── Wave 1-4 (Basic enemies)
+    │              │
+    │              ├── Wave 5 (Boss battle)
+    │              │
+    │              ├── Wave 6-9 (Mixed enemies)
+    │              │
+    │              ├── Wave 10 (Final boss)
+    │              │
+    │              ├── Victory → VictoryScreen
+    │              │
+    │              └── Game Over → GameOverScreen
+    │                                    │
+    │                                    ├── Restart → GameScene
+    │                                    │
+    │                                    └── Main Menu → MainMenu
+    │
+    └── Quit → Exit Game
+```
+
+## 🔧 Technical Details
+
+### Architecture
+
+- **Singleton Pattern**: GameManager, ScoreManager, AudioManager
+- **Object Pooling**: Bullets and enemies for performance
+- **Event System**: Decoupled communication between systems
+- **State Machine**: Game states (MainMenu, Playing, Paused, GameOver, Victory)
+
+### Collision System
+
+- Uses Unity's 2D physics with trigger colliders
+- Layer-based collision filtering for performance
+- Player has invincibility frames after taking damage
+
+### Performance
+
+- Object pooling prevents garbage collection spikes
+- Background parallax uses efficient transform manipulation
+- Enemies and bullets automatically deactivate when off-screen
+
+## 📝 System Requirements
+
+- **OS**: Windows 7/8/10/11 (64-bit)
+- **Processor**: 1.5 GHz or faster
+- **Memory**: 2 GB RAM
+- **Graphics**: DirectX 11 compatible
+- **Storage**: 100 MB available space
+
+## 📜 License
 
 This project is provided as-is for educational purposes. Feel free to modify and use it for your own projects.
 
+## 🤝 Contributing
+
+Feel free to fork this project and submit improvements:
+- Bug fixes
+- New enemy types
+- Additional power-ups
+- Visual effects
+- Sound design
+
+## 📞 Support
+
+If you encounter issues:
+1. Check the documentation files in `Docs/`
+2. Verify Unity version compatibility
+3. Ensure all prefab references are assigned
+4. Check the Console for error messages
+
 ---
 
-## Version
-
-- **Version**: 1.0
-- **Unity Version**: 2021.3+ LTS
-- **Last Updated**: March 2026
+**Happy Gaming! 🚀👾**
