@@ -1,129 +1,171 @@
 using UnityEngine;
 
 /// <summary>
-/// Controls enemy ship behavior including movement, shooting, and health.
+/// Controls a single enemy: movement pattern, health, shooting, and scoring
+/// on death. Enemies move downward with optional sine-wave or zigzag patterns.
 /// </summary>
+[RequireComponent(typeof(SpriteRenderer), typeof(BoxCollider2D))]
 public class EnemyController : MonoBehaviour
 {
-    [Header("Movement Settings")]
-    [SerializeField] private float moveSpeed = 3f;
-    [SerializeField] private float horizontalMovement = 0f;
+    // ── Movement patterns ────────────────────────────────────────────
+    public enum MovePattern { Straight, SineWave, Zigzag, Dive }
 
-    [Header("Shooting Settings")]
+    [Header("Movement")]
+    [SerializeField] private MovePattern pattern    = MovePattern.Straight;
+    [SerializeField] private float moveSpeed        = 3f;
+    [SerializeField] private float sineAmplitude    = 2f;
+    [SerializeField] private float sineFrequency    = 2f;
+
+    [Header("Combat")]
+    [SerializeField] private int   health          = 2;
+    [SerializeField] private int   scoreValue      = 100;
+    [SerializeField] private int   contactDamage   = 1;
+
+    [Header("Shooting")]
+    [SerializeField] private bool       canShoot       = true;
     [SerializeField] private GameObject bulletPrefab;
-    [SerializeField] private float fireRate = 2f;
-    [SerializeField] private bool canShoot = true;
+    [SerializeField] private float      fireRate       = 1.5f;
+    [SerializeField] private float      bulletSpeed    = 6f;
 
-    [Header("Health & Score")]
-    [SerializeField] private int maxHealth = 1;
-    [SerializeField] private int scoreValue = 100;
+    [Header("Drops")]
+    [SerializeField] private GameObject[] powerUpPrefabs;
+    [SerializeField, Range(0f, 1f)] private float dropChance = 0.15f;
 
-    [Header("Boundaries")]
-    [SerializeField] private float destroyY = -6f;
-
-    private int currentHealth;
+    // ── Runtime ──────────────────────────────────────────────────────
+    private float startX;
+    private float aliveTime;
     private float nextFireTime;
+    private bool  isDead;
 
-    public int MaxHealth => maxHealth;
-    public int ScoreValue => scoreValue;
+    // Allow SpawnManager to override pattern at spawn
+    public void Setup(MovePattern p, float speed, int hp, int score, bool shoots)
+    {
+        pattern    = p;
+        moveSpeed  = speed;
+        health     = hp;
+        scoreValue = score;
+        canShoot   = shoots;
+    }
 
     private void Start()
     {
-        currentHealth = maxHealth;
+        startX = transform.position.x;
         nextFireTime = Time.time + Random.Range(0.5f, fireRate);
-        
-        // Add slight random horizontal movement variation
-        horizontalMovement = Random.Range(-0.5f, 0.5f);
     }
 
     private void Update()
     {
-        if (GameManager.Instance != null && GameManager.Instance.IsGameOver)
+        if (isDead) return;
+        if (GameManager.Instance != null && (GameManager.Instance.IsGameOver || GameManager.Instance.IsPaused))
             return;
 
         Move();
-        HandleShooting();
-        CheckBounds();
+        TryShoot();
+        DestroyIfOffScreen();
     }
 
+    // ── Movement ─────────────────────────────────────────────────────
     private void Move()
     {
-        Vector3 movement = new Vector3(horizontalMovement, -1f, 0f).normalized * moveSpeed * Time.deltaTime;
-        transform.Translate(movement, Space.World);
-    }
+        aliveTime += Time.deltaTime;
+        float yMove = -moveSpeed * Time.deltaTime;
 
-    private void HandleShooting()
-    {
-        if (!canShoot || bulletPrefab == null)
-            return;
-
-        if (Time.time >= nextFireTime)
+        switch (pattern)
         {
-            Shoot();
-            nextFireTime = Time.time + fireRate + Random.Range(-0.5f, 0.5f);
+            case MovePattern.Straight:
+                transform.position += new Vector3(0, yMove, 0);
+                break;
+
+            case MovePattern.SineWave:
+                float xOffset = Mathf.Sin(aliveTime * sineFrequency) * sineAmplitude * Time.deltaTime;
+                transform.position += new Vector3(xOffset, yMove, 0);
+                break;
+
+            case MovePattern.Zigzag:
+                float zigzag = Mathf.PingPong(aliveTime * sineFrequency, 1f) * 2f - 1f;
+                transform.position += new Vector3(zigzag * sineAmplitude * Time.deltaTime, yMove, 0);
+                break;
+
+            case MovePattern.Dive:
+                float diveSpeed = moveSpeed + aliveTime * 0.5f; // accelerates
+                transform.position += new Vector3(0, -diveSpeed * Time.deltaTime, 0);
+                break;
         }
     }
 
-    private void Shoot()
+    // ── Shooting ─────────────────────────────────────────────────────
+    private void TryShoot()
     {
-        Vector3 spawnPosition = transform.position + Vector3.down * 0.5f;
-        GameObject bullet = Instantiate(bulletPrefab, spawnPosition, Quaternion.identity);
-        
-        BulletController bulletController = bullet.GetComponent<BulletController>();
-        if (bulletController != null)
-        {
-            bulletController.Initialize(false, Vector3.down);
-        }
+        if (!canShoot || bulletPrefab == null) return;
+        if (Time.time < nextFireTime) return;
+
+        nextFireTime = Time.time + fireRate + Random.Range(-0.2f, 0.3f);
+
+        GameObject bullet = Instantiate(bulletPrefab, transform.position + Vector3.down * 0.5f, Quaternion.identity);
+        BulletController bc = bullet.GetComponent<BulletController>();
+        if (bc != null) bc.Init(Vector3.down, bulletSpeed, false);
+
+        AudioManager.Instance?.PlaySFX("EnemyShoot");
     }
 
-    private void CheckBounds()
+    // ── Damage ───────────────────────────────────────────────────────
+    public void TakeDamage(int amount)
     {
-        if (transform.position.y < destroyY)
-        {
-            Destroy(gameObject);
-        }
+        if (isDead) return;
+        health -= amount;
+        StartCoroutine(FlashWhite());
+        if (health <= 0) Die();
     }
 
-    public void TakeDamage(int damage)
+    private System.Collections.IEnumerator FlashWhite()
     {
-        currentHealth -= damage;
-        
-        if (currentHealth <= 0)
-        {
-            Die();
-        }
+        SpriteRenderer sr = GetComponent<SpriteRenderer>();
+        if (sr == null) yield break;
+        Color orig = sr.color;
+        sr.color = Color.white;
+        yield return new WaitForSeconds(0.08f);
+        if (sr != null) sr.color = orig;
     }
 
     private void Die()
     {
-        // Add score
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.AddScore(scoreValue);
-        }
-
+        isDead = true;
+        GameManager.Instance?.AddScore(scoreValue);
+        AudioManager.Instance?.PlaySFX("EnemyExplode");
+        TryDropPowerUp();
+        SpawnManager.Instance?.OnEnemyDestroyed();
         Destroy(gameObject);
     }
 
+    private void TryDropPowerUp()
+    {
+        if (powerUpPrefabs == null || powerUpPrefabs.Length == 0) return;
+        if (Random.value > dropChance) return;
+        int idx = Random.Range(0, powerUpPrefabs.Length);
+        if (powerUpPrefabs[idx] != null)
+            Instantiate(powerUpPrefabs[idx], transform.position, Quaternion.identity);
+    }
+
+    // ── Collision (enemies damage player on contact) ─────────────────
     private void OnTriggerEnter2D(Collider2D other)
     {
-        // Handle collision with player bullet
-        if (other.CompareTag("PlayerBullet"))
+        if (isDead) return;
+
+        PlayerController player = other.GetComponent<PlayerController>();
+        if (player != null)
         {
-            TakeDamage(1);
-            Destroy(other.gameObject);
+            player.TakeDamage(contactDamage);
+            Die();
         }
     }
 
-    /// <summary>
-    /// Configure enemy properties (called by spawner)
-    /// </summary>
-    public void Configure(float speed, int health, int score, bool shooting)
+    // ── Cleanup ──────────────────────────────────────────────────────
+    private void DestroyIfOffScreen()
     {
-        moveSpeed = speed;
-        maxHealth = health;
-        currentHealth = health;
-        scoreValue = score;
-        canShoot = shooting;
+        if (transform.position.y < -7f)
+        {
+            SpawnManager.Instance?.OnEnemyDestroyed();
+            Destroy(gameObject);
+        }
     }
 }
