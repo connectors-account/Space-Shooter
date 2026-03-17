@@ -1,68 +1,76 @@
 using UnityEngine;
 
 /// <summary>
-/// Controls bullet movement and behavior for both player and enemy bullets.
+/// Generic projectile used by both player and enemies.
+/// Direction, speed, and ownership are set via Init().
 /// </summary>
+[RequireComponent(typeof(BoxCollider2D))]
 public class BulletController : MonoBehaviour
 {
-    [Header("Bullet Settings")]
-    [SerializeField] private float speed = 12f;
-    [SerializeField] private float lifetime = 3f;
+    [Header("Defaults (overridden by Init)")]
+    [SerializeField] private float  defaultSpeed  = 10f;
+    [SerializeField] private int    damage        = 1;
+    [SerializeField] private float  lifetime      = 5f;
 
-    private Vector3 moveDirection = Vector3.up;
-    private bool isPlayerBullet = true;
+    private Vector3 direction;
+    private float   speed;
+    private bool    isPlayerBullet;
+    private bool    initialised;
 
-    public bool IsPlayerBullet => isPlayerBullet;
-
-    private void Start()
+    /// <summary>
+    /// Called by the shooter to configure the bullet.
+    /// </summary>
+    public void Init(Vector3 dir, float spd, bool playerOwned)
     {
-        // Destroy bullet after lifetime expires
+        direction      = dir.normalized;
+        speed          = spd;
+        isPlayerBullet = playerOwned;
+        initialised    = true;
+
+        // Tint enemy bullets red, player bullets yellow
+        SpriteRenderer sr = GetComponent<SpriteRenderer>();
+        if (sr != null)
+            sr.color = isPlayerBullet ? new Color(1f, 0.95f, 0.3f) : new Color(1f, 0.3f, 0.3f);
+
+        // Set layer for selective collision
+        gameObject.layer = LayerMask.NameToLayer(isPlayerBullet ? "PlayerBullet" : "EnemyBullet");
+
         Destroy(gameObject, lifetime);
     }
 
     private void Update()
     {
-        Move();
-    }
-
-    private void Move()
-    {
-        transform.Translate(moveDirection * speed * Time.deltaTime, Space.World);
-    }
-
-    /// <summary>
-    /// Initialize the bullet with direction and ownership.
-    /// </summary>
-    /// <param name="playerBullet">True if fired by player, false if fired by enemy</param>
-    /// <param name="direction">Direction the bullet should travel</param>
-    public void Initialize(bool playerBullet, Vector3 direction)
-    {
-        isPlayerBullet = playerBullet;
-        moveDirection = direction.normalized;
-
-        // Set appropriate tag based on ownership
-        if (playerBullet)
+        if (!initialised)
         {
-            gameObject.tag = "PlayerBullet";
+            // Fallback: fly upward (player default)
+            direction = Vector3.up;
+            speed = defaultSpeed;
+            isPlayerBullet = true;
+            initialised = true;
+        }
+
+        transform.position += direction * speed * Time.deltaTime;
+    }
+
+    private void OnTriggerEnter2D(Collider2D other)
+    {
+        if (isPlayerBullet)
+        {
+            EnemyController enemy = other.GetComponent<EnemyController>();
+            if (enemy != null)
+            {
+                enemy.TakeDamage(damage);
+                Destroy(gameObject);
+            }
         }
         else
         {
-            gameObject.tag = "EnemyBullet";
+            PlayerController player = other.GetComponent<PlayerController>();
+            if (player != null)
+            {
+                player.TakeDamage(damage);
+                Destroy(gameObject);
+            }
         }
-
-        // Rotate bullet to face movement direction
-        if (direction != Vector3.zero)
-        {
-            float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg - 90f;
-            transform.rotation = Quaternion.Euler(0f, 0f, angle);
-        }
-    }
-
-    /// <summary>
-    /// Set bullet speed.
-    /// </summary>
-    public void SetSpeed(float newSpeed)
-    {
-        speed = newSpeed;
     }
 }
