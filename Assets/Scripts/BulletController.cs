@@ -1,68 +1,57 @@
 using UnityEngine;
 
 /// <summary>
-/// Controls bullet movement and behavior for both player and enemy bullets.
+/// Controls bullet movement, lifetime, and damage.
+/// Attach to bullet prefabs with Rigidbody2D (kinematic) and CircleCollider2D (trigger).
 /// </summary>
 public class BulletController : MonoBehaviour
 {
     [Header("Bullet Settings")]
-    [SerializeField] private float speed = 12f;
-    [SerializeField] private float lifetime = 3f;
+    [SerializeField] private int damage = 10;
+    [SerializeField] private float lifetime = 5f;
 
-    private Vector3 moveDirection = Vector3.up;
-    private bool isPlayerBullet = true;
+    private Vector2 direction;
+    private float speed;
+    private bool isPlayerBullet;
+    private float spawnTime;
 
+    /// <summary>Damage this bullet deals on hit.</summary>
+    public int Damage => damage;
+
+    /// <summary>Whether this bullet belongs to the player.</summary>
     public bool IsPlayerBullet => isPlayerBullet;
 
-    private void Start()
+    /// <summary>
+    /// Initialize the bullet with a direction, speed, and ownership.
+    /// Called by the spawner (PlayerController or EnemyController).
+    /// </summary>
+    /// <param name="dir">Normalized direction vector.</param>
+    /// <param name="spd">Movement speed in units/second.</param>
+    /// <param name="playerBullet">True if fired by the player.</param>
+    public void Initialize(Vector2 dir, float spd, bool playerBullet)
     {
-        // Destroy bullet after lifetime expires
-        Destroy(gameObject, lifetime);
+        direction = dir.normalized;
+        speed = spd;
+        isPlayerBullet = playerBullet;
+        spawnTime = Time.time;
+
+        // Assign the correct tag for collision filtering
+        gameObject.tag = playerBullet ? "PlayerBullet" : "EnemyBullet";
+
+        // Rotate bullet to face movement direction
+        float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg - 90f;
+        transform.rotation = Quaternion.Euler(0, 0, angle);
     }
 
     private void Update()
     {
-        Move();
-    }
+        // Move the bullet
+        transform.Translate(direction * speed * Time.deltaTime, Space.World);
 
-    private void Move()
-    {
-        transform.Translate(moveDirection * speed * Time.deltaTime, Space.World);
-    }
-
-    /// <summary>
-    /// Initialize the bullet with direction and ownership.
-    /// </summary>
-    /// <param name="playerBullet">True if fired by player, false if fired by enemy</param>
-    /// <param name="direction">Direction the bullet should travel</param>
-    public void Initialize(bool playerBullet, Vector3 direction)
-    {
-        isPlayerBullet = playerBullet;
-        moveDirection = direction.normalized;
-
-        // Set appropriate tag based on ownership
-        if (playerBullet)
+        // Destroy after lifetime expires
+        if (Time.time - spawnTime >= lifetime)
         {
-            gameObject.tag = "PlayerBullet";
+            Destroy(gameObject);
         }
-        else
-        {
-            gameObject.tag = "EnemyBullet";
-        }
-
-        // Rotate bullet to face movement direction
-        if (direction != Vector3.zero)
-        {
-            float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg - 90f;
-            transform.rotation = Quaternion.Euler(0f, 0f, angle);
-        }
-    }
-
-    /// <summary>
-    /// Set bullet speed.
-    /// </summary>
-    public void SetSpeed(float newSpeed)
-    {
-        speed = newSpeed;
     }
 }

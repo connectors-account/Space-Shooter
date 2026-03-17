@@ -1,8 +1,10 @@
 using UnityEngine;
 using UnityEngine.UI;
+using System.Collections;
 
 /// <summary>
-/// Manages all UI elements including health display, score, and game over screen.
+/// Manages all UI elements: HUD (score, health, wave), pause menu, game over screen.
+/// Attach to a Canvas GameObject in the GamePlay scene.
 /// </summary>
 public class UIManager : MonoBehaviour
 {
@@ -10,158 +12,170 @@ public class UIManager : MonoBehaviour
 
     [Header("HUD Elements")]
     [SerializeField] private Text scoreText;
-    [SerializeField] private Text healthText;
-    [SerializeField] private Image[] healthIcons;
+    [SerializeField] private Text waveText;
+    [SerializeField] private Slider healthBar;
+    [SerializeField] private Image healthBarFill;
 
-    [Header("Game Over Panel")]
-    [SerializeField] private GameObject gameOverPanel;
-    [SerializeField] private Text gameOverScoreText;
-    [SerializeField] private Text highScoreText;
+    [Header("Wave Announcement")]
+    [SerializeField] private GameObject waveAnnouncementPanel;
+    [SerializeField] private Text waveAnnouncementText;
+    [SerializeField] private float announcementDuration = 2f;
 
     [Header("Pause Menu")]
     [SerializeField] private GameObject pauseMenuPanel;
+    [SerializeField] private Button resumeButton;
+    [SerializeField] private Button pauseMainMenuButton;
+    [SerializeField] private Button pauseQuitButton;
+
+    [Header("Game Over Screen")]
+    [SerializeField] private GameObject gameOverPanel;
+    [SerializeField] private Text finalScoreText;
+    [SerializeField] private Text highScoreText;
+    [SerializeField] private Button restartButton;
+    [SerializeField] private Button gameOverMainMenuButton;
 
     private void Awake()
     {
-        // Singleton pattern
-        if (Instance == null)
-        {
-            Instance = this;
-        }
-        else
+        // Singleton (scene-level, does not persist)
+        if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
             return;
         }
+        Instance = this;
+
+        // Hide overlay panels
+        if (pauseMenuPanel != null) pauseMenuPanel.SetActive(false);
+        if (gameOverPanel != null) gameOverPanel.SetActive(false);
+        if (waveAnnouncementPanel != null) waveAnnouncementPanel.SetActive(false);
     }
 
     private void Start()
     {
-        // Ensure panels are hidden at start
-        HideGameOver();
-        HidePauseMenu();
+        SetupButtons();
+    }
+
+    /// <summary>
+    /// Wire up button click listeners.
+    /// </summary>
+    private void SetupButtons()
+    {
+        if (resumeButton != null)
+            resumeButton.onClick.AddListener(() => {
+                if (GameManager.Instance != null) GameManager.Instance.ResumeGame();
+            });
+
+        if (pauseMainMenuButton != null)
+            pauseMainMenuButton.onClick.AddListener(() => {
+                if (GameManager.Instance != null) GameManager.Instance.GoToMainMenu();
+            });
+
+        if (pauseQuitButton != null)
+            pauseQuitButton.onClick.AddListener(() => {
+                if (GameManager.Instance != null) GameManager.Instance.QuitGame();
+            });
+
+        if (restartButton != null)
+            restartButton.onClick.AddListener(() => {
+                if (GameManager.Instance != null) GameManager.Instance.RestartGame();
+            });
+
+        if (gameOverMainMenuButton != null)
+            gameOverMainMenuButton.onClick.AddListener(() => {
+                if (GameManager.Instance != null) GameManager.Instance.GoToMainMenu();
+            });
     }
 
     /// <summary>
     /// Update the score display.
     /// </summary>
-    public void UpdateScore(int score)
+    public void UpdateScoreText(int score)
     {
         if (scoreText != null)
-        {
-            scoreText.text = $"Score: {score}";
-        }
+            scoreText.text = "Score: " + score.ToString("N0");
     }
 
     /// <summary>
-    /// Update the health display.
+    /// Update the wave number display.
     /// </summary>
-    public void UpdateHealth(int currentHealth, int maxHealth)
+    public void UpdateWaveText(int wave)
     {
-        // Update text display
-        if (healthText != null)
+        if (waveText != null)
+            waveText.text = "Wave: " + wave;
+    }
+
+    /// <summary>
+    /// Update the health bar slider and color.
+    /// </summary>
+    public void UpdateHealthBar(int currentHealth, int maxHealth)
+    {
+        if (healthBar != null)
         {
-            healthText.text = $"Health: {currentHealth}/{maxHealth}";
+            healthBar.maxValue = maxHealth;
+            healthBar.value = currentHealth;
         }
 
-        // Update health icons if available
-        if (healthIcons != null && healthIcons.Length > 0)
+        // Change color based on health percentage
+        if (healthBarFill != null)
         {
-            for (int i = 0; i < healthIcons.Length; i++)
-            {
-                if (healthIcons[i] != null)
-                {
-                    healthIcons[i].enabled = i < currentHealth;
-                }
-            }
+            float healthPercent = (float)currentHealth / maxHealth;
+            if (healthPercent > 0.6f)
+                healthBarFill.color = Color.green;
+            else if (healthPercent > 0.3f)
+                healthBarFill.color = Color.yellow;
+            else
+                healthBarFill.color = Color.red;
         }
     }
 
     /// <summary>
-    /// Show the game over screen with final score.
+    /// Display a wave announcement that fades out.
     /// </summary>
-    public void ShowGameOver(int finalScore, int highScore)
+    public void ShowWaveAnnouncement(int waveNumber)
+    {
+        if (waveAnnouncementPanel == null || waveAnnouncementText == null) return;
+
+        waveAnnouncementText.text = "WAVE " + waveNumber;
+        waveAnnouncementPanel.SetActive(true);
+        StartCoroutine(HideAnnouncementRoutine());
+    }
+
+    private IEnumerator HideAnnouncementRoutine()
+    {
+        yield return new WaitForSeconds(announcementDuration);
+        if (waveAnnouncementPanel != null)
+            waveAnnouncementPanel.SetActive(false);
+    }
+
+    /// <summary>
+    /// Show or hide the pause menu.
+    /// </summary>
+    public void ShowPauseMenu(bool show)
+    {
+        if (pauseMenuPanel != null)
+            pauseMenuPanel.SetActive(show);
+    }
+
+    /// <summary>
+    /// Show the game over screen with final and high scores.
+    /// </summary>
+    public void ShowGameOverScreen(int finalScore, int highScore)
     {
         if (gameOverPanel != null)
         {
             gameOverPanel.SetActive(true);
-        }
 
-        if (gameOverScoreText != null)
-        {
-            gameOverScoreText.text = $"Final Score: {finalScore}";
-        }
+            if (finalScoreText != null)
+                finalScoreText.text = "Score: " + finalScore.ToString("N0");
 
-        if (highScoreText != null)
-        {
-            highScoreText.text = $"High Score: {highScore}";
-        }
-    }
-
-    /// <summary>
-    /// Hide the game over screen.
-    /// </summary>
-    public void HideGameOver()
-    {
-        if (gameOverPanel != null)
-        {
-            gameOverPanel.SetActive(false);
-        }
-    }
-
-    /// <summary>
-    /// Show the pause menu.
-    /// </summary>
-    public void ShowPauseMenu()
-    {
-        if (pauseMenuPanel != null)
-        {
-            pauseMenuPanel.SetActive(true);
-        }
-    }
-
-    /// <summary>
-    /// Hide the pause menu.
-    /// </summary>
-    public void HidePauseMenu()
-    {
-        if (pauseMenuPanel != null)
-        {
-            pauseMenuPanel.SetActive(false);
-        }
-    }
-
-    // Button callback methods (can be assigned in Unity Inspector)
-    
-    public void OnRestartButtonClicked()
-    {
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.RestartGame();
-        }
-    }
-
-    public void OnResumeButtonClicked()
-    {
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.TogglePause();
-        }
-    }
-
-    public void OnQuitButtonClicked()
-    {
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.QuitGame();
+            if (highScoreText != null)
+                highScoreText.text = "High Score: " + highScore.ToString("N0");
         }
     }
 
     private void OnDestroy()
     {
         if (Instance == this)
-        {
             Instance = null;
-        }
     }
 }
