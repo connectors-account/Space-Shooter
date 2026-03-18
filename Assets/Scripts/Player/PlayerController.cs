@@ -1,315 +1,302 @@
+// ============================================================================
+// PlayerController.cs - Player ship movement, shooting, and power-up handling
+// ============================================================================
+using System.Collections;
 using UnityEngine;
 
-namespace SpaceShooter.Player
+/// <summary>
+/// Controls the player ship: WASD/Arrow movement, spacebar shooting,
+/// weapon upgrades, shield, and speed boost integration.
+/// Requires: HealthSystem, CollisionHandler, Rigidbody2D, Collider2D
+/// </summary>
+[RequireComponent(typeof(HealthSystem))]
+[RequireComponent(typeof(Rigidbody2D))]
+public class PlayerController : MonoBehaviour
 {
-    /// <summary>
-    /// Controls player ship movement, shooting, health, and power-up states.
-    /// Attach to the Player ship GameObject.
-    /// </summary>
-    public class PlayerController : MonoBehaviour
+    // ---- Movement ----
+    [Header("Movement")]
+    [Tooltip("Base movement speed in units/sec")]
+    public float moveSpeed = 8f;
+
+    [Tooltip("Boundary padding from screen edge")]
+    public float boundaryPadding = 0.5f;
+
+    // ---- Shooting ----
+    [Header("Shooting")]
+    [Tooltip("Prefab for player bullets")]
+    public GameObject bulletPrefab;
+
+    [Tooltip("Transform where bullets spawn (tip of ship)")]
+    public Transform firePoint;
+
+    [Tooltip("Seconds between shots at weapon level 1")]
+    public float baseFireRate = 0.25f;
+
+    [Tooltip("Bullet speed")]
+    public float bulletSpeed = 15f;
+
+    [Tooltip("Base bullet damage")]
+    public int bulletDamage = 10;
+
+    // ---- Weapon Upgrade ----
+    [Header("Weapon Levels")]
+    [Tooltip("Current weapon level (1 = single shot, 2 = double, 3 = triple spread)")]
+    public int weaponLevel = 1;
+    public int maxWeaponLevel = 3;
+
+    // ---- Power-Up State ----
+    [Header("Power-Up State")]
+    public bool shieldActive = false;
+    public float speedBoostMultiplier = 1f;
+
+    // ---- Internal ----
+    private float _nextFireTime;
+    private HealthSystem _health;
+    private Rigidbody2D _rb;
+    private Camera _mainCam;
+    private Vector2 _screenBoundsMin;
+    private Vector2 _screenBoundsMax;
+
+    // ---- Shield visual (child object) ----
+    private GameObject _shieldVisual;
+
+    // ========================================================================
+    // Unity Lifecycle
+    // ========================================================================
+    private void Awake()
     {
-        [Header("Movement Settings")]
-        [SerializeField] private float moveSpeed = 8f;
-        [SerializeField] private float smoothTime = 0.05f;
+        _health = GetComponent<HealthSystem>();
+        _rb = GetComponent<Rigidbody2D>();
+        _rb.gravityScale = 0f; // no gravity in space!
+        _rb.freezeRotation = true;
+    }
 
-        [Header("Boundaries (Viewport)")]
-        [SerializeField] private float minX = -8.5f;
-        [SerializeField] private float maxX = 8.5f;
-        [SerializeField] private float minY = -4.5f;
-        [SerializeField] private float maxY = 4.5f;
+    private void Start()
+    {
+        _mainCam = Camera.main;
+        CalculateScreenBounds();
 
-        [Header("Health Settings")]
-        [SerializeField] private int maxHealth = 100;
-        [SerializeField] private float invincibilityDuration = 1.5f;
+        // Subscribe to death event
+        _health.OnDeath += HandleDeath;
 
-        [Header("Shooting Settings")]
-        [SerializeField] private GameObject bulletPrefab;
-        [SerializeField] private Transform firePoint;
-        [SerializeField] private float fireRate = 0.25f;
-        [SerializeField] private float rapidFireRate = 0.1f;
-        [SerializeField] private float rapidFireDuration = 5f;
+        // Create shield visual (hidden by default)
+        CreateShieldVisual();
+    }
 
-        [Header("Shield Settings")]
-        [SerializeField] private float shieldDuration = 8f;
-        [SerializeField] private GameObject shieldVisual; // child object for shield effect
+    private void Update()
+    {
+        // Don't accept input if game isn't playing
+        if (GameManager.Instance != null &&
+            GameManager.Instance.CurrentState != GameManager.GameState.Playing)
+            return;
 
-        [Header("Visual Feedback")]
-        [SerializeField] private SpriteRenderer spriteRenderer;
-        [SerializeField] private Color damageFlashColor = Color.red;
-        [SerializeField] private float flashDuration = 0.1f;
+        HandleMovement();
+        HandleShooting();
+        ClampPosition();
 
-        // ---- Runtime State ----
-        private int currentHealth;
-        private float nextFireTime;
-        private float currentFireRate;
-        private bool isRapidFireActive;
-        private float rapidFireEndTime;
-        private bool isShieldActive;
-        private float shieldEndTime;
-        private bool isInvincible;
-        private float invincibilityEndTime;
-        private Vector2 velocity;
-        private Color originalColor;
-        private bool isDead;
-
-        // ---- Public Properties ----
-        public int CurrentHealth => currentHealth;
-        public int MaxHealth => maxHealth;
-        public bool IsShieldActive => isShieldActive;
-        public bool IsRapidFireActive => isRapidFireActive;
-        public bool IsDead => isDead;
-
-        // ---- Events ----
-        public event System.Action<int, int> OnHealthChanged;  // currentHP, maxHP
-        public event System.Action OnPlayerDeath;
-
-        private void Awake()
+        // Pause toggle
+        if (Input.GetKeyDown(KeyCode.Escape))
         {
-            if (spriteRenderer == null)
-                spriteRenderer = GetComponent<SpriteRenderer>();
+            if (GameManager.Instance != null)
+                GameManager.Instance.PauseGame();
         }
+    }
 
-        private void Start()
+    private void OnDestroy()
+    {
+        if (_health != null)
+            _health.OnDeath -= HandleDeath;
+    }
+
+    // ========================================================================
+    // Movement
+    // ========================================================================
+    private void HandleMovement()
+    {
+        float h = Input.GetAxisRaw("Horizontal"); // A/D or Left/Right
+        float v = Input.GetAxisRaw("Vertical");   // W/S or Up/Down
+
+        Vector2 direction = new Vector2(h, v).normalized;
+        float currentSpeed = moveSpeed * speedBoostMultiplier;
+
+        _rb.linearVelocity = direction * currentSpeed;
+    }
+
+    /// <summary>Keep the player within the visible screen area.</summary>
+    private void ClampPosition()
+    {
+        Vector3 pos = transform.position;
+        pos.x = Mathf.Clamp(pos.x, _screenBoundsMin.x + boundaryPadding,
+                                     _screenBoundsMax.x - boundaryPadding);
+        pos.y = Mathf.Clamp(pos.y, _screenBoundsMin.y + boundaryPadding,
+                                     _screenBoundsMax.y - boundaryPadding);
+        transform.position = pos;
+    }
+
+    private void CalculateScreenBounds()
+    {
+        if (_mainCam == null) return;
+        _screenBoundsMin = _mainCam.ViewportToWorldPoint(new Vector3(0, 0, 0));
+        _screenBoundsMax = _mainCam.ViewportToWorldPoint(new Vector3(1, 1, 0));
+    }
+
+    // ========================================================================
+    // Shooting
+    // ========================================================================
+    private void HandleShooting()
+    {
+        if (Input.GetKey(KeyCode.Space) && Time.time >= _nextFireTime)
         {
-            currentHealth = maxHealth;
-            currentFireRate = fireRate;
-            isDead = false;
-
-            if (spriteRenderer != null)
-                originalColor = spriteRenderer.color;
-
-            if (shieldVisual != null)
-                shieldVisual.SetActive(false);
-
-            OnHealthChanged?.Invoke(currentHealth, maxHealth);
+            Fire();
+            _nextFireTime = Time.time + GetFireRate();
         }
+    }
 
-        private void Update()
+    private void Fire()
+    {
+        if (bulletPrefab == null) return;
+
+        Vector3 spawnPos = firePoint != null ? firePoint.position : transform.position + Vector3.up * 0.5f;
+
+        // Play shoot sound
+        if (AudioManager.Instance != null)
+            AudioManager.Instance.PlaySFX("PlayerShoot");
+
+        switch (weaponLevel)
         {
-            if (isDead) return;
+            case 1: // Single shot straight up
+                SpawnBullet(spawnPos, Vector2.up);
+                break;
 
-            HandleMovement();
-            HandleShooting();
-            HandlePowerUpTimers();
-            HandleInvincibility();
+            case 2: // Double shot (two parallel bullets)
+                SpawnBullet(spawnPos + Vector3.left * 0.25f, Vector2.up);
+                SpawnBullet(spawnPos + Vector3.right * 0.25f, Vector2.up);
+                break;
+
+            case 3: // Triple spread
+            default:
+                SpawnBullet(spawnPos, Vector2.up);
+                SpawnBullet(spawnPos, Quaternion.Euler(0, 0, 15) * Vector2.up);
+                SpawnBullet(spawnPos, Quaternion.Euler(0, 0, -15) * Vector2.up);
+                break;
         }
+    }
 
-        // ========== MOVEMENT ==========
-        private void HandleMovement()
+    private void SpawnBullet(Vector3 position, Vector2 direction)
+    {
+        GameObject bullet = Instantiate(bulletPrefab, position, Quaternion.identity);
+        bullet.tag = "PlayerBullet";
+
+        BulletController bc = bullet.GetComponent<BulletController>();
+        if (bc != null)
         {
-            float horizontal = Input.GetAxisRaw("Horizontal");
-            float vertical = Input.GetAxisRaw("Vertical");
-
-            Vector2 targetVelocity = new Vector2(horizontal, vertical).normalized * moveSpeed;
-            Vector2 currentVel = velocity;
-            velocity = Vector2.SmoothDamp(velocity, targetVelocity, ref currentVel, smoothTime);
-
-            Vector3 newPosition = transform.position + (Vector3)velocity * Time.deltaTime;
-
-            // Clamp to screen boundaries
-            newPosition.x = Mathf.Clamp(newPosition.x, minX, maxX);
-            newPosition.y = Mathf.Clamp(newPosition.y, minY, maxY);
-
-            transform.position = newPosition;
+            bc.Initialize(direction, bulletSpeed, bulletDamage);
         }
+    }
 
-        // ========== SHOOTING ==========
-        private void HandleShooting()
+    private float GetFireRate()
+    {
+        // Slightly faster fire rate at higher weapon levels
+        return baseFireRate * (1f - (weaponLevel - 1) * 0.1f);
+    }
+
+    // ========================================================================
+    // Power-Up Integration
+    // ========================================================================
+
+    /// <summary>Upgrade weapon level (called by PowerUpController).</summary>
+    public void UpgradeWeapon()
+    {
+        if (weaponLevel < maxWeaponLevel)
+            weaponLevel++;
+    }
+
+    /// <summary>Activate shield for a duration.</summary>
+    public void ActivateShield(float duration)
+    {
+        StartCoroutine(ShieldCoroutine(duration));
+    }
+
+    private IEnumerator ShieldCoroutine(float duration)
+    {
+        shieldActive = true;
+        _health.isInvincible = true;
+        if (_shieldVisual != null) _shieldVisual.SetActive(true);
+
+        yield return new WaitForSeconds(duration);
+
+        shieldActive = false;
+        _health.isInvincible = false;
+        if (_shieldVisual != null) _shieldVisual.SetActive(false);
+    }
+
+    /// <summary>Activate speed boost for a duration.</summary>
+    public void ActivateSpeedBoost(float multiplier, float duration)
+    {
+        StartCoroutine(SpeedBoostCoroutine(multiplier, duration));
+    }
+
+    private IEnumerator SpeedBoostCoroutine(float multiplier, float duration)
+    {
+        speedBoostMultiplier = multiplier;
+        yield return new WaitForSeconds(duration);
+        speedBoostMultiplier = 1f;
+    }
+
+    // ========================================================================
+    // Death
+    // ========================================================================
+    private void HandleDeath()
+    {
+        // Play explosion sound
+        if (AudioManager.Instance != null)
+            AudioManager.Instance.PlaySFX("Explosion");
+
+        // Notify game manager
+        if (GameManager.Instance != null)
+            GameManager.Instance.GameOver();
+
+        // Disable the player visually (don't destroy, GameOver screen needs reference)
+        gameObject.SetActive(false);
+    }
+
+    // ========================================================================
+    // Shield Visual Helper
+    // ========================================================================
+    private void CreateShieldVisual()
+    {
+        _shieldVisual = new GameObject("ShieldVisual");
+        _shieldVisual.transform.SetParent(transform);
+        _shieldVisual.transform.localPosition = Vector3.zero;
+
+        SpriteRenderer sr = _shieldVisual.AddComponent<SpriteRenderer>();
+        // Create a simple circle sprite for shield
+        sr.sprite = CreateCircleSprite(1.2f, new Color(0.3f, 0.7f, 1f, 0.4f));
+        sr.sortingOrder = 10;
+
+        _shieldVisual.SetActive(false);
+    }
+
+    /// <summary>Programmatically create a circle sprite for the shield effect.</summary>
+    private Sprite CreateCircleSprite(float radius, Color color)
+    {
+        int size = 64;
+        Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        float center = size / 2f;
+        float radiusPixels = size / 2f;
+
+        for (int y = 0; y < size; y++)
         {
-            if (Input.GetKey(KeyCode.Space) && Time.time >= nextFireTime)
+            for (int x = 0; x < size; x++)
             {
-                FireBullet();
-                nextFireTime = Time.time + currentFireRate;
+                float dist = Vector2.Distance(new Vector2(x, y), new Vector2(center, center));
+                if (dist < radiusPixels && dist > radiusPixels - 4f)
+                    tex.SetPixel(x, y, color);
+                else
+                    tex.SetPixel(x, y, Color.clear);
             }
         }
-
-        private void FireBullet()
-        {
-            if (bulletPrefab == null || firePoint == null) return;
-
-            GameObject bullet = Instantiate(bulletPrefab, firePoint.position, Quaternion.identity);
-
-            // Tag bullet as player bullet
-            bullet.tag = "PlayerBullet";
-
-            // Play shoot sound
-            Managers.AudioManager.Instance?.PlayShootSound();
-        }
-
-        // ========== HEALTH & DAMAGE ==========
-        public void TakeDamage(int damage)
-        {
-            if (isDead || isInvincible || isShieldActive) return;
-
-            currentHealth -= damage;
-            currentHealth = Mathf.Max(currentHealth, 0);
-
-            OnHealthChanged?.Invoke(currentHealth, maxHealth);
-
-            // Visual feedback
-            StartCoroutine(DamageFlash());
-
-            // Brief invincibility after being hit
-            isInvincible = true;
-            invincibilityEndTime = Time.time + invincibilityDuration;
-
-            Managers.AudioManager.Instance?.PlayExplosionSound();
-
-            if (currentHealth <= 0)
-            {
-                Die();
-            }
-        }
-
-        public void Heal(int amount)
-        {
-            if (isDead) return;
-
-            currentHealth += amount;
-            currentHealth = Mathf.Min(currentHealth, maxHealth);
-            OnHealthChanged?.Invoke(currentHealth, maxHealth);
-        }
-
-        private void Die()
-        {
-            isDead = true;
-            OnPlayerDeath?.Invoke();
-
-            Managers.AudioManager.Instance?.PlayExplosionSound();
-
-            // Disable the sprite but keep the object alive for game-over logic
-            if (spriteRenderer != null)
-                spriteRenderer.enabled = false;
-
-            // Disable collider
-            Collider2D col = GetComponent<Collider2D>();
-            if (col != null) col.enabled = false;
-        }
-
-        // ========== POWER-UPS ==========
-        public void ActivateRapidFire()
-        {
-            isRapidFireActive = true;
-            currentFireRate = rapidFireRate;
-            rapidFireEndTime = Time.time + rapidFireDuration;
-        }
-
-        public void ActivateShield()
-        {
-            isShieldActive = true;
-            shieldEndTime = Time.time + shieldDuration;
-
-            if (shieldVisual != null)
-                shieldVisual.SetActive(true);
-        }
-
-        private void HandlePowerUpTimers()
-        {
-            // Rapid fire timer
-            if (isRapidFireActive && Time.time >= rapidFireEndTime)
-            {
-                isRapidFireActive = false;
-                currentFireRate = fireRate;
-            }
-
-            // Shield timer
-            if (isShieldActive && Time.time >= shieldEndTime)
-            {
-                isShieldActive = false;
-                if (shieldVisual != null)
-                    shieldVisual.SetActive(false);
-            }
-        }
-
-        private void HandleInvincibility()
-        {
-            if (isInvincible && Time.time >= invincibilityEndTime)
-            {
-                isInvincible = false;
-                if (spriteRenderer != null)
-                    spriteRenderer.color = originalColor;
-            }
-
-            // Blink effect while invincible
-            if (isInvincible && spriteRenderer != null)
-            {
-                float alpha = Mathf.PingPong(Time.time * 10f, 1f) > 0.5f ? 1f : 0.3f;
-                Color c = originalColor;
-                c.a = alpha;
-                spriteRenderer.color = c;
-            }
-        }
-
-        // ========== VISUAL EFFECTS ==========
-        private System.Collections.IEnumerator DamageFlash()
-        {
-            if (spriteRenderer == null) yield break;
-
-            spriteRenderer.color = damageFlashColor;
-            yield return new WaitForSeconds(flashDuration);
-            spriteRenderer.color = originalColor;
-        }
-
-        // ========== COLLISION ==========
-        private void OnTriggerEnter2D(Collider2D other)
-        {
-            if (isDead) return;
-
-            // Collide with enemy bullets
-            if (other.CompareTag("EnemyBullet"))
-            {
-                Weapons.BulletController bullet = other.GetComponent<Weapons.BulletController>();
-                if (bullet != null)
-                {
-                    TakeDamage(bullet.Damage);
-                    Destroy(other.gameObject);
-                }
-            }
-
-            // Collide with enemies directly
-            if (other.CompareTag("Enemy"))
-            {
-                TakeDamage(20);
-            }
-
-            // Collide with power-ups
-            if (other.CompareTag("PowerUp"))
-            {
-                PowerUps.PowerUpController powerUp = other.GetComponent<PowerUps.PowerUpController>();
-                if (powerUp != null)
-                {
-                    powerUp.ApplyEffect(this);
-                    Destroy(other.gameObject);
-                }
-            }
-        }
-
-        /// <summary>
-        /// Resets the player to initial state (for restarting the game).
-        /// </summary>
-        public void ResetPlayer()
-        {
-            isDead = false;
-            currentHealth = maxHealth;
-            currentFireRate = fireRate;
-            isRapidFireActive = false;
-            isShieldActive = false;
-            isInvincible = false;
-            transform.position = new Vector3(0, -3f, 0);
-
-            if (spriteRenderer != null)
-            {
-                spriteRenderer.enabled = true;
-                spriteRenderer.color = originalColor;
-            }
-
-            Collider2D col = GetComponent<Collider2D>();
-            if (col != null) col.enabled = true;
-
-            if (shieldVisual != null)
-                shieldVisual.SetActive(false);
-
-            OnHealthChanged?.Invoke(currentHealth, maxHealth);
-        }
+        tex.Apply();
+        return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), size / (radius * 2));
     }
 }
