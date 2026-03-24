@@ -2,161 +2,215 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Manages overall game state, score, and game flow.
+/// GameManager is the central game-state controller.
+/// Tracks score, wave number, game state, and orchestrates
+/// spawners, UI, and scene transitions.
+/// Persists across scenes via DontDestroyOnLoad.
 /// </summary>
 public class GameManager : MonoBehaviour
 {
+    // ── Singleton ────────────────────────────────────────────
     public static GameManager Instance { get; private set; }
 
-    [Header("Game Settings")]
-    [SerializeField] private int startingScore = 0;
+    // ── Game State ───────────────────────────────────────────
+    public enum GameState { MainMenu, Playing, Paused, GameOver }
+    private GameState currentState = GameState.MainMenu;
 
-    private int currentScore;
-    private bool isGameOver = false;
-    private bool isPaused = false;
+    // ── Score ────────────────────────────────────────────────
+    private int score = 0;
+    private int highScore = 0;
 
-    public int CurrentScore => currentScore;
-    public bool IsGameOver => isGameOver;
-    public bool IsPaused => isPaused;
+    // ── Wave ─────────────────────────────────────────────────
+    private int currentWave = 0;
+    private float waveMultiplier = 1f;
+
+    // ── Public Properties ────────────────────────────────────
+    public GameState CurrentState => currentState;
+    public int Score => score;
+    public int HighScore => highScore;
+    public int CurrentWave => currentWave;
+
+    // ──────────────────────────────────────────────────────────
+    // Unity Lifecycle
+    // ──────────────────────────────────────────────────────────
 
     private void Awake()
     {
-        // Singleton pattern
-        if (Instance == null)
-        {
-            Instance = this;
-        }
-        else
+        // Singleton pattern – persist across scenes
+        if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
             return;
         }
-    }
+        Instance = this;
+        DontDestroyOnLoad(gameObject);
 
-    private void Start()
-    {
-        StartGame();
+        // Load persisted high score
+        highScore = PlayerPrefs.GetInt("HighScore", 0);
     }
 
     private void Update()
     {
-        HandlePauseInput();
-        HandleRestartInput();
-    }
-
-    private void HandlePauseInput()
-    {
-        if (Input.GetKeyDown(KeyCode.Escape) && !isGameOver)
+        // Pause / unpause with Escape key during gameplay
+        if (Input.GetKeyDown(KeyCode.Escape))
         {
-            TogglePause();
+            if (currentState == GameState.Playing)
+                PauseGame();
+            else if (currentState == GameState.Paused)
+                ResumeGame();
         }
     }
 
-    private void HandleRestartInput()
-    {
-        if (isGameOver && Input.GetKeyDown(KeyCode.R))
-        {
-            RestartGame();
-        }
-    }
+    // ──────────────────────────────────────────────────────────
+    // Game Flow
+    // ──────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Transition from Main Menu to the gameplay scene.
+    /// </summary>
     public void StartGame()
     {
-        currentScore = startingScore;
-        isGameOver = false;
-        isPaused = false;
+        score = 0;
+        currentWave = 0;
+        waveMultiplier = 1f;
+        currentState = GameState.Playing;
         Time.timeScale = 1f;
+        SceneManager.LoadScene("GamePlay");
+    }
 
-        UpdateScoreUI();
+    /// <summary>
+    /// Called after GamePlay scene loads; kick off spawners.
+    /// Hook this to SceneManager.sceneLoaded or call from a scene bootstrap.
+    /// </summary>
+    public void BeginGameplay()
+    {
+        currentState = GameState.Playing;
+
+        if (EnemySpawner.Instance != null)
+            EnemySpawner.Instance.StartSpawning();
 
         if (UIManager.Instance != null)
         {
-            UIManager.Instance.HideGameOver();
-            UIManager.Instance.HidePauseMenu();
+            UIManager.Instance.UpdateScoreDisplay(score);
+            UIManager.Instance.UpdateWaveDisplay(currentWave);
         }
     }
 
-    public void AddScore(int points)
+    public void PauseGame()
     {
-        if (isGameOver)
-            return;
-
-        currentScore += points;
-        UpdateScoreUI();
-    }
-
-    private void UpdateScoreUI()
-    {
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.UpdateScore(currentScore);
-        }
-    }
-
-    public void GameOver()
-    {
-        if (isGameOver)
-            return;
-
-        isGameOver = true;
+        if (currentState != GameState.Playing) return;
+        currentState = GameState.Paused;
         Time.timeScale = 0f;
 
+        if (MenuManager.Instance != null)
+            MenuManager.Instance.ShowPauseMenu();
+    }
+
+    public void ResumeGame()
+    {
+        if (currentState != GameState.Paused) return;
+        currentState = GameState.Playing;
+        Time.timeScale = 1f;
+
+        if (MenuManager.Instance != null)
+            MenuManager.Instance.HidePauseMenu();
+    }
+
+    /// <summary>
+    /// Called when the player ship is destroyed.
+    /// </summary>
+    public void OnPlayerDeath()
+    {
+        currentState = GameState.GameOver;
+
         // Save high score
-        int highScore = PlayerPrefs.GetInt("HighScore", 0);
-        if (currentScore > highScore)
+        if (score > highScore)
         {
-            PlayerPrefs.SetInt("HighScore", currentScore);
+            highScore = score;
+            PlayerPrefs.SetInt("HighScore", highScore);
             PlayerPrefs.Save();
         }
 
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.ShowGameOver(currentScore, PlayerPrefs.GetInt("HighScore", 0));
-        }
+        // Stop spawning
+        if (EnemySpawner.Instance != null)
+            EnemySpawner.Instance.StopSpawning();
 
-        Debug.Log($"Game Over! Final Score: {currentScore}");
+        // Show game over screen after a short delay
+        StartCoroutine(ShowGameOverDelayed(1.5f));
     }
 
+    private System.Collections.IEnumerator ShowGameOverDelayed(float delay)
+    {
+        yield return new WaitForSeconds(delay);
+
+        if (MenuManager.Instance != null)
+            MenuManager.Instance.ShowGameOverScreen(score, highScore);
+    }
+
+    /// <summary>
+    /// Return to main menu scene.
+    /// </summary>
+    public void ReturnToMainMenu()
+    {
+        currentState = GameState.MainMenu;
+        Time.timeScale = 1f;
+        SceneManager.LoadScene("MainMenu");
+    }
+
+    /// <summary>
+    /// Restart the gameplay scene.
+    /// </summary>
     public void RestartGame()
     {
-        Time.timeScale = 1f;
-        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+        StartGame();
     }
 
-    public void TogglePause()
+    // ──────────────────────────────────────────────────────────
+    // Score
+    // ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Add score with the current wave multiplier applied.
+    /// </summary>
+    public void AddScore(int baseScore)
     {
-        isPaused = !isPaused;
-        Time.timeScale = isPaused ? 0f : 1f;
+        int earned = Mathf.RoundToInt(baseScore * waveMultiplier);
+        score += earned;
 
         if (UIManager.Instance != null)
-        {
-            if (isPaused)
-            {
-                UIManager.Instance.ShowPauseMenu();
-            }
-            else
-            {
-                UIManager.Instance.HidePauseMenu();
-            }
-        }
+            UIManager.Instance.UpdateScoreDisplay(score);
     }
 
+    // ──────────────────────────────────────────────────────────
+    // Wave Progression
+    // ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Called by EnemySpawner at the start of each new wave.
+    /// Increases the score multiplier so later waves reward more.
+    /// </summary>
+    public void OnNewWave(int waveNumber)
+    {
+        currentWave = waveNumber;
+        waveMultiplier = 1f + (waveNumber - 1) * 0.25f; // +25% per wave
+
+        if (UIManager.Instance != null)
+            UIManager.Instance.UpdateWaveDisplay(currentWave);
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // Scene Management Helpers
+    // ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Quit the application.
+    /// </summary>
     public void QuitGame()
     {
-        Debug.Log("Quitting game...");
-        
-        #if UNITY_EDITOR
-            UnityEditor.EditorApplication.isPlaying = false;
-        #else
-            Application.Quit();
-        #endif
-    }
-
-    private void OnDestroy()
-    {
-        if (Instance == this)
-        {
-            Instance = null;
-        }
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+#else
+        Application.Quit();
+#endif
     }
 }
