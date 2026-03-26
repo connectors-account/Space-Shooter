@@ -1,172 +1,170 @@
+using System.Collections;
 using UnityEngine;
 
 /// <summary>
-/// Controls the player ship movement, shooting, and health management.
+/// Handles player movement (WASD / Arrows), shooting (Space), invincibility frames,
+/// and power-up effects. Attach to the Player GameObject.
 /// </summary>
+[RequireComponent(typeof(SpriteRenderer), typeof(Collider2D))]
 public class PlayerController : MonoBehaviour
 {
-    [Header("Movement Settings")]
-    [SerializeField] private float moveSpeed = 8f;
-    [SerializeField] private float horizontalBoundary = 8f;
-    [SerializeField] private float verticalBoundaryTop = 4f;
-    [SerializeField] private float verticalBoundaryBottom = -4f;
+    [Header("Movement")]
+    public float moveSpeed = 8f;
+    public float screenInset = 0.4f;  // keep sprite fully on-screen
 
-    [Header("Shooting Settings")]
-    [SerializeField] private GameObject bulletPrefab;
-    [SerializeField] private Transform firePoint;
-    [SerializeField] private float fireRate = 0.25f;
+    [Header("Shooting")]
+    public GameObject bulletPrefab;
+    public float fireRate      = 0.2f;   // seconds between shots
+    public float bulletSpeed   = 14f;
+    public int   bulletDamage  = 1;
 
-    [Header("Health Settings")]
-    [SerializeField] private int maxHealth = 3;
+    [Header("Invincibility")]
+    public float invincibleDuration = 1.5f;
+    public float flashInterval      = 0.1f;
 
-    private int currentHealth;
-    private float nextFireTime = 0f;
-    private bool canControl = true;
+    [Header("Power-up state (read-only in Inspector)")]
+    public bool  hasSpreadShot;
+    public bool  hasRapidFire;
+    public bool  hasShield;
 
-    public int CurrentHealth => currentHealth;
-    public int MaxHealth => maxHealth;
+    private float fireCooldown;
+    private bool  isInvincible;
+    private SpriteRenderer spriteRenderer;
 
     private void Start()
     {
-        currentHealth = maxHealth;
-        UpdateHealthUI();
+        spriteRenderer = GetComponent<SpriteRenderer>();
+
+        // Register bullet prefab with the static spawner
+        if (bulletPrefab != null)
+            BulletSpawner.SetPrefab(bulletPrefab);
     }
 
     private void Update()
     {
-        if (!canControl || GameManager.Instance == null || GameManager.Instance.IsGameOver)
-            return;
+        if (GameManager.Instance == null) return;
+        if (GameManager.Instance.CurrentState != GameManager.State.Playing) return;
 
         HandleMovement();
         HandleShooting();
     }
 
+    // ── Movement ──────────────────────────────────────────────────────
     private void HandleMovement()
     {
-        float horizontalInput = Input.GetAxis("Horizontal");
-        float verticalInput = Input.GetAxis("Vertical");
+        float h = Input.GetAxisRaw("Horizontal");
+        float v = Input.GetAxisRaw("Vertical");
+        Vector3 delta = new Vector3(h, v, 0f).normalized * moveSpeed * Time.deltaTime;
+        transform.position += delta;
 
-        // WASD and Arrow keys are both mapped to Horizontal/Vertical by default in Unity
-        Vector3 movement = new Vector3(horizontalInput, verticalInput, 0f) * moveSpeed * Time.deltaTime;
-        transform.Translate(movement, Space.World);
-
-        // Clamp position to screen boundaries
-        float clampedX = Mathf.Clamp(transform.position.x, -horizontalBoundary, horizontalBoundary);
-        float clampedY = Mathf.Clamp(transform.position.y, verticalBoundaryBottom, verticalBoundaryTop);
-        transform.position = new Vector3(clampedX, clampedY, transform.position.z);
+        if (ScreenBounds.Instance != null)
+            transform.position = ScreenBounds.Instance.ClampToScreen(transform.position, screenInset);
     }
 
+    // ── Shooting ──────────────────────────────────────────────────────
     private void HandleShooting()
     {
-        if (Input.GetKey(KeyCode.Space) && Time.time >= nextFireTime)
+        fireCooldown -= Time.deltaTime;
+        if (Input.GetKey(KeyCode.Space) && fireCooldown <= 0f)
         {
-            Shoot();
-            nextFireTime = Time.time + fireRate;
+            float rate = hasRapidFire ? fireRate * 0.4f : fireRate;
+            fireCooldown = rate;
+
+            Vector3 spawnPos = transform.position + Vector3.up * 0.6f;
+
+            if (hasSpreadShot)
+                BulletSpawner.SpreadShot3(spawnPos, Vector2.up, bulletSpeed,
+                                           bulletDamage, Bullet.Owner.Player);
+            else
+                BulletSpawner.SingleShot(spawnPos, Vector2.up, bulletSpeed,
+                                          bulletDamage, Bullet.Owner.Player);
+
+            if (AudioManager.Instance != null) AudioManager.Instance.PlayShoot();
         }
     }
 
-    private void Shoot()
+    // ── Damage / invincibility ────────────────────────────────────────
+    public void Hit(int damage)
     {
-        if (bulletPrefab == null)
+        if (isInvincible) return;
+
+        if (hasShield)
         {
-            Debug.LogWarning("Bullet prefab not assigned to PlayerController!");
+            hasShield = false;
+            StartCoroutine(InvincibilityCoroutine());
             return;
         }
 
-        Vector3 spawnPosition = firePoint != null ? firePoint.position : transform.position + Vector3.up * 0.5f;
-        GameObject bullet = Instantiate(bulletPrefab, spawnPosition, Quaternion.identity);
-        
-        BulletController bulletController = bullet.GetComponent<BulletController>();
-        if (bulletController != null)
-        {
-            bulletController.Initialize(true, Vector3.up);
-        }
-    }
-
-    public void TakeDamage(int damage)
-    {
-        currentHealth -= damage;
-        currentHealth = Mathf.Max(currentHealth, 0);
-        
-        UpdateHealthUI();
-
-        if (currentHealth <= 0)
-        {
-            Die();
-        }
-    }
-
-    private void UpdateHealthUI()
-    {
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.UpdateHealth(currentHealth, maxHealth);
-        }
-    }
-
-    private void Die()
-    {
-        canControl = false;
-        
         if (GameManager.Instance != null)
-        {
-            GameManager.Instance.GameOver();
-        }
+            GameManager.Instance.TakeDamage(damage);
 
-        // Visual feedback - disable renderer instead of destroying
-        SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null)
-        {
-            spriteRenderer.enabled = false;
-        }
+        if (AudioManager.Instance != null)
+            AudioManager.Instance.PlayPlayerHit();
 
-        // Disable collider
-        Collider2D col = GetComponent<Collider2D>();
-        if (col != null)
+        StartCoroutine(InvincibilityCoroutine());
+    }
+
+    private IEnumerator InvincibilityCoroutine()
+    {
+        isInvincible = true;
+        float timer = 0f;
+        while (timer < invincibleDuration)
         {
-            col.enabled = false;
+            spriteRenderer.enabled = !spriteRenderer.enabled;  // flash
+            yield return new WaitForSeconds(flashInterval);
+            timer += flashInterval;
+        }
+        spriteRenderer.enabled = true;
+        isInvincible = false;
+    }
+
+    // ── Power-up application ─────────────────────────────────────────
+    public void ApplyPowerUp(PowerUp.PowerUpType type, float duration)
+    {
+        switch (type)
+        {
+            case PowerUp.PowerUpType.HealthRestore:
+                if (GameManager.Instance != null) GameManager.Instance.RestoreHealth(1);
+                break;
+            case PowerUp.PowerUpType.SpreadShot:
+                StartCoroutine(TimedPowerUp(type, duration));
+                break;
+            case PowerUp.PowerUpType.Shield:
+                hasShield = true;   // one-hit shield, no timer
+                break;
+            case PowerUp.PowerUpType.RapidFire:
+                StartCoroutine(TimedPowerUp(type, duration));
+                break;
         }
     }
 
+    private IEnumerator TimedPowerUp(PowerUp.PowerUpType type, float duration)
+    {
+        switch (type)
+        {
+            case PowerUp.PowerUpType.SpreadShot: hasSpreadShot = true; break;
+            case PowerUp.PowerUpType.RapidFire:  hasRapidFire  = true; break;
+        }
+
+        // Notify UI of active power-up
+        if (UIManager.Instance != null)
+            UIManager.Instance.ShowPowerUpTimer(type.ToString(), duration);
+
+        yield return new WaitForSeconds(duration);
+
+        switch (type)
+        {
+            case PowerUp.PowerUpType.SpreadShot: hasSpreadShot = false; break;
+            case PowerUp.PowerUpType.RapidFire:  hasRapidFire  = false; break;
+        }
+    }
+
+    // ── Collision with enemy body ────────────────────────────────────
     private void OnTriggerEnter2D(Collider2D other)
     {
-        // Handle collision with enemy
         if (other.CompareTag("Enemy"))
         {
-            TakeDamage(1);
-            
-            EnemyController enemy = other.GetComponent<EnemyController>();
-            if (enemy != null)
-            {
-                enemy.TakeDamage(enemy.MaxHealth); // Destroy enemy on collision
-            }
+            Hit(1);
         }
-        // Handle collision with enemy bullet
-        else if (other.CompareTag("EnemyBullet"))
-        {
-            TakeDamage(1);
-            Destroy(other.gameObject);
-        }
-    }
-
-    public void ResetPlayer()
-    {
-        currentHealth = maxHealth;
-        canControl = true;
-        transform.position = new Vector3(0f, -3f, 0f);
-        
-        SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null)
-        {
-            spriteRenderer.enabled = true;
-        }
-
-        Collider2D col = GetComponent<Collider2D>();
-        if (col != null)
-        {
-            col.enabled = true;
-        }
-
-        UpdateHealthUI();
     }
 }
