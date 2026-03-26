@@ -6,8 +6,8 @@ TagManager:
   tags:
   - PlayerBullet
   - EnemyBullet
-  - Enemy
   - PowerUp
+  - Boss
   layers:
   - Default
   - TransparentFX
@@ -19,10 +19,10 @@ TagManager:
   -
   - Player
   - Enemy
-  - Bullet
+  - PlayerBullet
+  - EnemyBullet
   - PowerUp
   - Background
-  -
   -
   -
   -
@@ -45,12 +45,24 @@ TagManager:
   - name: Background
     uniqueID: 1
     locked: 0
+  - name: Stars
+    uniqueID: 2
+    locked: 0
   - name: Default
     uniqueID: 0
     locked: 0
-  - name: Foreground
-    uniqueID: 2
+  - name: Enemies
+    uniqueID: 3
+    locked: 0
+  - name: Player
+    uniqueID: 4
+    locked: 0
+  - name: Bullets
+    uniqueID: 5
+    locked: 0
+  - name: Effects
+    uniqueID: 6
     locked: 0
   - name: UI
-    uniqueID: 3
+    uniqueID: 7
     locked: 0
