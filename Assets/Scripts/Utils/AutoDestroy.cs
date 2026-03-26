@@ -1,18 +1,14 @@
+// ============================================================================
+// AutoDestroy.cs — Destroys GameObject after a delay
+// ============================================================================
 using UnityEngine;
 
-namespace SpaceShooter.Utils
+public class AutoDestroy : MonoBehaviour
 {
-    /// <summary>
-    /// Simple auto-destroy component with configurable lifetime.
-    /// Attach to particle effects, temporary objects, etc.
-    /// </summary>
-    public class AutoDestroy : MonoBehaviour
-    {
-        [SerializeField] private float lifetime = 2f;
+    [SerializeField] private float lifetime = 2f;
 
-        private void Start()
-        {
-            Destroy(gameObject, lifetime);
-        }
+    private void Start()
+    {
+        Destroy(gameObject, lifetime);
     }
 }

@@ -10,13 +10,17 @@
 # MemoryCaptures
 /[Mm]emoryCaptures/
 
+# Recordings
+/[Rr]ecordings/
+
 # Asset meta data
 *.pidb.meta
 *.pdb.meta
 *.mdb.meta
 
-# Unity3D generated meta files
-*.pidb
+# Visual Studio
+.vs/
+*.csproj
 *.unityproj
 *.sln
 *.suo
@@ -31,29 +35,28 @@
 *.opendb
 *.VC.db
 
-# Unity Package Manager
-/[Pp]ackages/packages-lock.json
+# Unity3D generated
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
 
-# OS generated
+# Rider
+.idea/
+
+# OS
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
-
-# Crashlytics
-crashlytics-build.properties
+*.swp
+*~
 
 # Builds
 *.apk
 *.aab
 *.unitypackage
-*.app
 
-# IDE
-.idea/
-.vs/
-*.csproj
-*.sln
+# Crashlytics
+crashlytics-build.properties
+
+# Python cache
+__pycache__/
+*.pyc
