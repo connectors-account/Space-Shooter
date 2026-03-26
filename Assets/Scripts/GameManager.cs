@@ -1,162 +1,119 @@
+using System;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Manages overall game state, score, and game flow.
+/// Singleton that owns all core game state: score, health, wave, and game-flow state machine.
+/// Raises C# events so UI / audio / spawners can react without tight coupling.
 /// </summary>
 public class GameManager : MonoBehaviour
 {
+    // ── Singleton ────────────────────────────────────────────────────────
     public static GameManager Instance { get; private set; }
 
-    [Header("Game Settings")]
-    [SerializeField] private int startingScore = 0;
+    // ── Game state enum ──────────────────────────────────────────────────
+    public enum State { Menu, Playing, Paused, GameOver }
+    public State CurrentState { get; private set; } = State.Menu;
 
-    private int currentScore;
-    private bool isGameOver = false;
-    private bool isPaused = false;
+    // ── Events ───────────────────────────────────────────────────────────
+    public event Action<State> OnStateChanged;
+    public event Action<int>   OnScoreChanged;
+    public event Action<int>   OnHealthChanged;
+    public event Action<int>   OnWaveChanged;
 
-    public int CurrentScore => currentScore;
-    public bool IsGameOver => isGameOver;
-    public bool IsPaused => isPaused;
+    // ── Runtime data ─────────────────────────────────────────────────────
+    public int Score       { get; private set; }
+    public int PlayerHealth{ get; private set; }
+    public int MaxHealth   { get; private set; } = 3;
+    public int WaveNumber  { get; private set; }
 
+    // ── Lifecycle ─────────────────────────────────────────────────────────
     private void Awake()
     {
-        // Singleton pattern
-        if (Instance == null)
-        {
-            Instance = this;
-        }
-        else
-        {
-            Destroy(gameObject);
-            return;
-        }
+        if (Instance != null && Instance != this) { Destroy(gameObject); return; }
+        Instance = this;
+        DontDestroyOnLoad(gameObject);
     }
 
-    private void Start()
-    {
-        StartGame();
-    }
-
-    private void Update()
-    {
-        HandlePauseInput();
-        HandleRestartInput();
-    }
-
-    private void HandlePauseInput()
-    {
-        if (Input.GetKeyDown(KeyCode.Escape) && !isGameOver)
-        {
-            TogglePause();
-        }
-    }
-
-    private void HandleRestartInput()
-    {
-        if (isGameOver && Input.GetKeyDown(KeyCode.R))
-        {
-            RestartGame();
-        }
-    }
-
+    // ── Public API ────────────────────────────────────────────────────────
     public void StartGame()
     {
-        currentScore = startingScore;
-        isGameOver = false;
-        isPaused = false;
+        Score        = 0;
+        PlayerHealth = MaxHealth;
+        WaveNumber   = 0;
         Time.timeScale = 1f;
-
-        UpdateScoreUI();
-
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.HideGameOver();
-            UIManager.Instance.HidePauseMenu();
-        }
+        SetState(State.Playing);
+        OnScoreChanged?.Invoke(Score);
+        OnHealthChanged?.Invoke(PlayerHealth);
     }
 
-    public void AddScore(int points)
+    public void PauseGame()
     {
-        if (isGameOver)
-            return;
-
-        currentScore += points;
-        UpdateScoreUI();
+        if (CurrentState != State.Playing) return;
+        Time.timeScale = 0f;
+        SetState(State.Paused);
     }
 
-    private void UpdateScoreUI()
+    public void ResumeGame()
     {
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.UpdateScore(currentScore);
-        }
+        if (CurrentState != State.Paused) return;
+        Time.timeScale = 1f;
+        SetState(State.Playing);
     }
 
     public void GameOver()
     {
-        if (isGameOver)
-            return;
-
-        isGameOver = true;
         Time.timeScale = 0f;
+        SetState(State.GameOver);
+    }
 
-        // Save high score
-        int highScore = PlayerPrefs.GetInt("HighScore", 0);
-        if (currentScore > highScore)
-        {
-            PlayerPrefs.SetInt("HighScore", currentScore);
-            PlayerPrefs.Save();
-        }
-
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.ShowGameOver(currentScore, PlayerPrefs.GetInt("HighScore", 0));
-        }
-
-        Debug.Log($"Game Over! Final Score: {currentScore}");
+    public void ReturnToMenu()
+    {
+        Time.timeScale = 1f;
+        SetState(State.Menu);
+        SceneManager.LoadScene("MenuScene");
     }
 
     public void RestartGame()
     {
         Time.timeScale = 1f;
-        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+        SceneManager.LoadScene("GameScene");
+        // StartGame will be called by GameScene bootstrap
     }
 
-    public void TogglePause()
+    // ── Score ─────────────────────────────────────────────────────────────
+    public void AddScore(int points)
     {
-        isPaused = !isPaused;
-        Time.timeScale = isPaused ? 0f : 1f;
-
-        if (UIManager.Instance != null)
-        {
-            if (isPaused)
-            {
-                UIManager.Instance.ShowPauseMenu();
-            }
-            else
-            {
-                UIManager.Instance.HidePauseMenu();
-            }
-        }
+        Score += points;
+        OnScoreChanged?.Invoke(Score);
     }
 
-    public void QuitGame()
+    // ── Health ────────────────────────────────────────────────────────────
+    public void TakeDamage(int amount)
     {
-        Debug.Log("Quitting game...");
-        
-        #if UNITY_EDITOR
-            UnityEditor.EditorApplication.isPlaying = false;
-        #else
-            Application.Quit();
-        #endif
+        if (CurrentState != State.Playing) return;
+        PlayerHealth = Mathf.Max(0, PlayerHealth - amount);
+        OnHealthChanged?.Invoke(PlayerHealth);
+        if (PlayerHealth <= 0) GameOver();
     }
 
-    private void OnDestroy()
+    public void RestoreHealth(int amount)
     {
-        if (Instance == this)
-        {
-            Instance = null;
-        }
+        PlayerHealth = Mathf.Min(MaxHealth, PlayerHealth + amount);
+        OnHealthChanged?.Invoke(PlayerHealth);
+    }
+
+    // ── Waves ─────────────────────────────────────────────────────────────
+    public void AdvanceWave()
+    {
+        WaveNumber++;
+        OnWaveChanged?.Invoke(WaveNumber);
+    }
+
+    // ── Internal ──────────────────────────────────────────────────────────
+    private void SetState(State newState)
+    {
+        CurrentState = newState;
+        OnStateChanged?.Invoke(newState);
     }
 }
