@@ -1,0 +1,67 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!78 &1
+TagManager:
+  serializedVersion: 2
+  tags:
+  - Player
+  - Enemy
+  - PlayerBullet
+  - EnemyBullet
+  - PowerUp
+  - Boundary
+  layers:
+  - Default
+  - TransparentFX
+  - Ignore Raycast
+  - 
+  - Water
+  - UI
+  - 
+  - 
+  - PlayerBullet
+  - EnemyBullet
+  - Player
+  - Enemy
+  - PowerUp
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  m_SortingLayers:
+  - name: Default
+    uniqueID: 0
+    locked: 0
+  - name: Background
+    uniqueID: 1
+    locked: 0
+  - name: Stars
+    uniqueID: 2
+    locked: 0
+  - name: Entities
+    uniqueID: 3
+    locked: 0
+  - name: Bullets
+    uniqueID: 4
+    locked: 0
+  - name: Effects
+    uniqueID: 5
+    locked: 0
+  - name: UI
+    uniqueID: 6
+    locked: 0
