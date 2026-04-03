@@ -1,333 +1,418 @@
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace SpaceShooter.UI
+/// <summary>
+/// Manages all UI panels: Main Menu, Game HUD, Pause Menu, Game Over screen.
+/// Builds UI elements programmatically (no prefab dependencies).
+/// </summary>
+public class UIManager : MonoBehaviour
 {
-    /// <summary>
-    /// Manages all UI elements: Main Menu, HUD, Game Over screen, Pause menu.
-    /// </summary>
-    public class UIManager : MonoBehaviour
+    public static UIManager Instance { get; private set; }
+
+    // UI Panels
+    private GameObject mainMenuPanel;
+    private GameObject gameHUDPanel;
+    private GameObject pauseMenuPanel;
+    private GameObject gameOverPanel;
+
+    // HUD elements
+    private Text scoreText;
+    private Text comboText;
+    private Text healthText;
+    private Text waveText;
+    private GameObject healthBar;
+    private Image healthBarFill;
+
+    // Game Over elements
+    private Text finalScoreText;
+    private Text finalWaveText;
+    private Text highScoreText;
+
+    // Announcement
+    private Text waveAnnouncementText;
+    private Text powerUpText;
+
+    private Canvas canvas;
+
+    void Awake()
     {
-        [Header("UI Panels")]
-        [SerializeField] private GameObject mainMenuPanel;
-        [SerializeField] private GameObject hudPanel;
-        [SerializeField] private GameObject gameOverPanel;
-        [SerializeField] private GameObject pausePanel;
-        [SerializeField] private GameObject waveAnnouncementPanel;
-
-        [Header("Main Menu Elements")]
-        [SerializeField] private Text titleText;
-        [SerializeField] private Text highScoreMenuText;
-        [SerializeField] private Button startButton;
-        [SerializeField] private Button quitButton;
-
-        [Header("HUD Elements")]
-        [SerializeField] private Text scoreText;
-        [SerializeField] private Text waveText;
-        [SerializeField] private Slider healthBar;
-        [SerializeField] private Text healthText;
-        [SerializeField] private Image shieldIcon;
-        [SerializeField] private Image rapidFireIcon;
-
-        [Header("Game Over Elements")]
-        [SerializeField] private Text gameOverTitleText;
-        [SerializeField] private Text finalScoreText;
-        [SerializeField] private Text finalWaveText;
-        [SerializeField] private Text highScoreText;
-        [SerializeField] private Text newHighScoreText;
-        [SerializeField] private Button restartButton;
-        [SerializeField] private Button menuButton;
-
-        [Header("Pause Elements")]
-        [SerializeField] private Button resumeButton;
-        [SerializeField] private Button pauseMenuButton;
-
-        [Header("Wave Announcement")]
-        [SerializeField] private Text waveAnnouncementText;
-        [SerializeField] private float announcementDuration = 2f;
-
-        private Managers.GameManager gameManager;
-
-        private void Start()
+        if (Instance != null && Instance != this)
         {
-            gameManager = Managers.GameManager.Instance;
+            Destroy(gameObject);
+            return;
+        }
+        Instance = this;
 
-            // Setup button listeners
-            SetupButtons();
+        CreateUI();
+    }
 
-            // Subscribe to GameManager events
-            if (gameManager != null)
+    void CreateUI()
+    {
+        // Create Canvas
+        GameObject canvasObj = new GameObject("UICanvas");
+        canvasObj.transform.SetParent(transform);
+        canvas = canvasObj.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 100;
+
+        CanvasScaler scaler = canvasObj.AddComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920, 1080);
+
+        canvasObj.AddComponent<GraphicRaycaster>();
+
+        // Create all panels
+        CreateMainMenu(canvasObj.transform);
+        CreateGameHUD(canvasObj.transform);
+        CreatePauseMenu(canvasObj.transform);
+        CreateGameOverPanel(canvasObj.transform);
+
+        // Ensure EventSystem exists
+        if (FindObjectOfType<UnityEngine.EventSystems.EventSystem>() == null)
+        {
+            GameObject es = new GameObject("EventSystem");
+            es.AddComponent<UnityEngine.EventSystems.EventSystem>();
+            es.AddComponent<UnityEngine.EventSystems.StandaloneInputModule>();
+        }
+    }
+
+    // ======================== MAIN MENU ========================
+    void CreateMainMenu(Transform parent)
+    {
+        mainMenuPanel = CreatePanel(parent, "MainMenuPanel", new Color(0, 0, 0, 0.85f));
+
+        // Title
+        CreateText(mainMenuPanel.transform, "TitleText", "SPACE SHOOTER",
+            new Vector2(0, 200), 72, Color.cyan, FontStyle.Bold);
+
+        // Subtitle
+        CreateText(mainMenuPanel.transform, "SubtitleText", "Defend the Galaxy",
+            new Vector2(0, 120), 28, new Color(0.7f, 0.7f, 0.8f), FontStyle.Italic);
+
+        // Start Button
+        CreateButton(mainMenuPanel.transform, "StartButton", "START GAME",
+            new Vector2(0, -20), new Vector2(300, 60), Color.green, () =>
             {
-                gameManager.OnScoreChanged += UpdateScore;
-                gameManager.OnWaveChanged += UpdateWave;
-                gameManager.OnGameStateChanged += HandleGameStateChanged;
-            }
+                if (AudioManager.Instance != null) AudioManager.Instance.PlayMenuSelect();
+                if (GameManager.Instance != null) GameManager.Instance.StartGame();
+            });
 
-            // Find and subscribe to player events
-            Player.PlayerController player = FindObjectOfType<Player.PlayerController>();
-            if (player != null)
+        // Quit Button
+        CreateButton(mainMenuPanel.transform, "QuitButton", "QUIT",
+            new Vector2(0, -100), new Vector2(300, 60), Color.red, () =>
             {
-                player.OnHealthChanged += UpdateHealth;
-                player.OnPlayerDeath += OnPlayerDeath;
-            }
+                if (AudioManager.Instance != null) AudioManager.Instance.PlayMenuSelect();
+                if (GameManager.Instance != null) GameManager.Instance.QuitGame();
+            });
 
-            // Show main menu initially
-            ShowMainMenu();
-        }
+        // Controls info
+        CreateText(mainMenuPanel.transform, "ControlsText",
+            "Controls: WASD/Arrows = Move | Space = Shoot | Esc = Pause",
+            new Vector2(0, -250), 20, new Color(0.6f, 0.6f, 0.6f), FontStyle.Normal);
 
-        private void SetupButtons()
-        {
-            if (startButton != null)
-                startButton.onClick.AddListener(OnStartClicked);
+        // High Score
+        int hs = PlayerPrefs.GetInt("HighScore", 0);
+        CreateText(mainMenuPanel.transform, "HighScoreMenuText",
+            $"High Score: {hs}",
+            new Vector2(0, -300), 24, Color.yellow, FontStyle.Normal);
+    }
 
-            if (quitButton != null)
-                quitButton.onClick.AddListener(OnQuitClicked);
+    // ======================== GAME HUD ========================
+    void CreateGameHUD(Transform parent)
+    {
+        gameHUDPanel = CreatePanel(parent, "GameHUDPanel", Color.clear);
 
-            if (restartButton != null)
-                restartButton.onClick.AddListener(OnRestartClicked);
+        // Score (top-left)
+        scoreText = CreateText(gameHUDPanel.transform, "ScoreText", "Score: 0",
+            new Vector2(-750, 480), 32, Color.white, FontStyle.Bold).GetComponent<Text>();
+        scoreText.alignment = TextAnchor.UpperLeft;
 
-            if (menuButton != null)
-                menuButton.onClick.AddListener(OnMenuClicked);
+        // Combo (below score)
+        comboText = CreateText(gameHUDPanel.transform, "ComboText", "",
+            new Vector2(-750, 440), 24, Color.yellow, FontStyle.Bold).GetComponent<Text>();
+        comboText.alignment = TextAnchor.UpperLeft;
 
-            if (resumeButton != null)
-                resumeButton.onClick.AddListener(OnResumeClicked);
+        // Wave (top-center)
+        waveText = CreateText(gameHUDPanel.transform, "WaveText", "Wave: 1",
+            new Vector2(0, 480), 32, Color.cyan, FontStyle.Bold).GetComponent<Text>();
 
-            if (pauseMenuButton != null)
-                pauseMenuButton.onClick.AddListener(OnMenuClicked);
-        }
+        // Health bar (top-right)
+        healthText = CreateText(gameHUDPanel.transform, "HealthText", "HP",
+            new Vector2(580, 490), 24, Color.white, FontStyle.Bold).GetComponent<Text>();
 
-        // ========== PANEL MANAGEMENT ==========
+        // Health bar background
+        GameObject healthBg = CreateUIImage(gameHUDPanel.transform, "HealthBarBG",
+            new Vector2(750, 490), new Vector2(250, 25), new Color(0.3f, 0, 0));
 
-        private void ShowMainMenu()
-        {
-            SetAllPanelsInactive();
-            if (mainMenuPanel != null) mainMenuPanel.SetActive(true);
+        // Health bar fill
+        healthBar = CreateUIImage(gameHUDPanel.transform, "HealthBarFill",
+            new Vector2(750, 490), new Vector2(250, 25), Color.red);
+        healthBarFill = healthBar.GetComponent<Image>();
 
-            if (highScoreMenuText != null && gameManager != null)
-                highScoreMenuText.text = "High Score: " + gameManager.HighScore;
-        }
+        // Wave announcement (center, large)
+        waveAnnouncementText = CreateText(gameHUDPanel.transform, "WaveAnnouncement", "",
+            new Vector2(0, 100), 56, Color.white, FontStyle.Bold).GetComponent<Text>();
 
-        private void ShowHUD()
-        {
-            SetAllPanelsInactive();
-            if (hudPanel != null) hudPanel.SetActive(true);
-        }
+        // Power-up pickup text
+        powerUpText = CreateText(gameHUDPanel.transform, "PowerUpText", "",
+            new Vector2(0, -200), 30, Color.yellow, FontStyle.Bold).GetComponent<Text>();
 
-        private void ShowGameOver()
-        {
-            // Keep HUD visible behind game over
-            if (gameOverPanel != null) gameOverPanel.SetActive(true);
+        gameHUDPanel.SetActive(false);
+    }
 
-            if (gameManager != null)
+    // ======================== PAUSE MENU ========================
+    void CreatePauseMenu(Transform parent)
+    {
+        pauseMenuPanel = CreatePanel(parent, "PauseMenuPanel", new Color(0, 0, 0, 0.7f));
+
+        CreateText(pauseMenuPanel.transform, "PausedText", "PAUSED",
+            new Vector2(0, 150), 64, Color.white, FontStyle.Bold);
+
+        CreateButton(pauseMenuPanel.transform, "ResumeButton", "RESUME",
+            new Vector2(0, 20), new Vector2(300, 60), Color.green, () =>
             {
-                if (finalScoreText != null)
-                    finalScoreText.text = "Score: " + gameManager.Score;
+                if (AudioManager.Instance != null) AudioManager.Instance.PlayMenuSelect();
+                if (GameManager.Instance != null) GameManager.Instance.ResumeGame();
+            });
 
-                if (finalWaveText != null)
-                    finalWaveText.text = "Wave Reached: " + gameManager.CurrentWave;
-
-                if (highScoreText != null)
-                    highScoreText.text = "High Score: " + gameManager.HighScore;
-
-                if (newHighScoreText != null)
-                    newHighScoreText.gameObject.SetActive(gameManager.Score >= gameManager.HighScore && gameManager.Score > 0);
-            }
-        }
-
-        private void ShowPauseMenu()
-        {
-            if (pausePanel != null) pausePanel.SetActive(true);
-        }
-
-        private void HidePauseMenu()
-        {
-            if (pausePanel != null) pausePanel.SetActive(false);
-        }
-
-        private void SetAllPanelsInactive()
-        {
-            if (mainMenuPanel != null) mainMenuPanel.SetActive(false);
-            if (hudPanel != null) hudPanel.SetActive(false);
-            if (gameOverPanel != null) gameOverPanel.SetActive(false);
-            if (pausePanel != null) pausePanel.SetActive(false);
-            if (waveAnnouncementPanel != null) waveAnnouncementPanel.SetActive(false);
-        }
-
-        // ========== EVENT HANDLERS ==========
-
-        private void HandleGameStateChanged(Managers.GameManager.GameState newState)
-        {
-            switch (newState)
+        CreateButton(pauseMenuPanel.transform, "MenuButton", "MAIN MENU",
+            new Vector2(0, -60), new Vector2(300, 60), Color.yellow, () =>
             {
-                case Managers.GameManager.GameState.MainMenu:
-                    ShowMainMenu();
-                    break;
+                if (AudioManager.Instance != null) AudioManager.Instance.PlayMenuSelect();
+                if (GameManager.Instance != null) GameManager.Instance.ReturnToMenu();
+            });
 
-                case Managers.GameManager.GameState.Playing:
-                    ShowHUD();
-                    HidePauseMenu();
-                    break;
-
-                case Managers.GameManager.GameState.Paused:
-                    ShowPauseMenu();
-                    break;
-
-                case Managers.GameManager.GameState.GameOver:
-                    ShowGameOver();
-                    break;
-            }
-        }
-
-        private void UpdateScore(int newScore)
-        {
-            if (scoreText != null)
-                scoreText.text = "Score: " + newScore;
-        }
-
-        private void UpdateWave(int newWave)
-        {
-            if (waveText != null)
-                waveText.text = "Wave " + newWave;
-
-            // Show wave announcement
-            StartCoroutine(ShowWaveAnnouncement(newWave));
-
-            Managers.AudioManager.Instance?.PlayWaveStartSound();
-        }
-
-        private void UpdateHealth(int currentHP, int maxHP)
-        {
-            if (healthBar != null)
+        CreateButton(pauseMenuPanel.transform, "QuitPauseButton", "QUIT GAME",
+            new Vector2(0, -140), new Vector2(300, 60), Color.red, () =>
             {
-                healthBar.maxValue = maxHP;
-                healthBar.value = currentHP;
-            }
+                if (AudioManager.Instance != null) AudioManager.Instance.PlayMenuSelect();
+                if (GameManager.Instance != null) GameManager.Instance.QuitGame();
+            });
 
-            if (healthText != null)
-                healthText.text = currentHP + " / " + maxHP;
-        }
+        pauseMenuPanel.SetActive(false);
+    }
 
-        private void OnPlayerDeath()
-        {
-            Managers.AudioManager.Instance?.PlayGameOverSound();
-            gameManager?.GameOver();
-        }
+    // ======================== GAME OVER ========================
+    void CreateGameOverPanel(Transform parent)
+    {
+        gameOverPanel = CreatePanel(parent, "GameOverPanel", new Color(0, 0, 0, 0.85f));
 
-        // ========== BUTTON CALLBACKS ==========
+        CreateText(gameOverPanel.transform, "GameOverTitle", "GAME OVER",
+            new Vector2(0, 200), 72, Color.red, FontStyle.Bold);
 
-        private void OnStartClicked()
-        {
-            Managers.AudioManager.Instance?.PlayButtonClickSound();
+        finalScoreText = CreateText(gameOverPanel.transform, "FinalScore", "Score: 0",
+            new Vector2(0, 100), 40, Color.white, FontStyle.Normal).GetComponent<Text>();
 
-            // Reset player
-            Player.PlayerController player = FindObjectOfType<Player.PlayerController>();
-            if (player != null)
+        finalWaveText = CreateText(gameOverPanel.transform, "FinalWave", "Wave: 0",
+            new Vector2(0, 50), 32, Color.cyan, FontStyle.Normal).GetComponent<Text>();
+
+        highScoreText = CreateText(gameOverPanel.transform, "HighScore", "High Score: 0",
+            new Vector2(0, -10), 28, Color.yellow, FontStyle.Normal).GetComponent<Text>();
+
+        CreateButton(gameOverPanel.transform, "RestartButton", "PLAY AGAIN",
+            new Vector2(0, -100), new Vector2(300, 60), Color.green, () =>
             {
-                player.ResetPlayer();
-                // Re-subscribe in case events were lost
-                player.OnHealthChanged -= UpdateHealth;
-                player.OnPlayerDeath -= OnPlayerDeath;
-                player.OnHealthChanged += UpdateHealth;
-                player.OnPlayerDeath += OnPlayerDeath;
-            }
+                if (AudioManager.Instance != null) AudioManager.Instance.PlayMenuSelect();
+                if (GameManager.Instance != null) GameManager.Instance.StartGame();
+            });
 
-            // Clear existing enemies
-            Managers.SpawnManager spawner = FindObjectOfType<Managers.SpawnManager>();
-            if (spawner != null)
-                spawner.ClearAllEnemies();
-
-            gameManager?.StartGame();
-        }
-
-        private void OnRestartClicked()
-        {
-            Managers.AudioManager.Instance?.PlayButtonClickSound();
-
-            Player.PlayerController player = FindObjectOfType<Player.PlayerController>();
-            if (player != null)
+        CreateButton(gameOverPanel.transform, "MenuGameOverButton", "MAIN MENU",
+            new Vector2(0, -180), new Vector2(300, 60), Color.yellow, () =>
             {
-                player.ResetPlayer();
-                player.OnHealthChanged -= UpdateHealth;
-                player.OnPlayerDeath -= OnPlayerDeath;
-                player.OnHealthChanged += UpdateHealth;
-                player.OnPlayerDeath += OnPlayerDeath;
-            }
+                if (AudioManager.Instance != null) AudioManager.Instance.PlayMenuSelect();
+                if (GameManager.Instance != null) GameManager.Instance.ReturnToMenu();
+            });
 
-            Managers.SpawnManager spawner = FindObjectOfType<Managers.SpawnManager>();
-            if (spawner != null)
-                spawner.ClearAllEnemies();
+        gameOverPanel.SetActive(false);
+    }
 
-            gameManager?.RestartGame();
-        }
+    // ======================== PUBLIC METHODS ========================
+    public void ShowMainMenu()
+    {
+        mainMenuPanel.SetActive(true);
+        gameHUDPanel.SetActive(false);
+        pauseMenuPanel.SetActive(false);
+        gameOverPanel.SetActive(false);
+    }
 
-        private void OnMenuClicked()
+    public void ShowGameHUD()
+    {
+        mainMenuPanel.SetActive(false);
+        gameHUDPanel.SetActive(true);
+        pauseMenuPanel.SetActive(false);
+        gameOverPanel.SetActive(false);
+    }
+
+    public void ShowPauseMenu()
+    {
+        pauseMenuPanel.SetActive(true);
+    }
+
+    public void ShowGameOver(int score, int wave)
+    {
+        gameHUDPanel.SetActive(false);
+        gameOverPanel.SetActive(true);
+
+        if (finalScoreText != null) finalScoreText.text = $"Score: {score}";
+        if (finalWaveText != null) finalWaveText.text = $"Reached Wave: {wave}";
+        int hs = ScoreManager.Instance != null ? ScoreManager.Instance.GetHighScore() : 0;
+        if (highScoreText != null) highScoreText.text = $"High Score: {hs}";
+    }
+
+    public void UpdateScore(int score, int combo)
+    {
+        if (scoreText != null) scoreText.text = $"Score: {score}";
+        if (comboText != null)
         {
-            Managers.AudioManager.Instance?.PlayButtonClickSound();
-
-            Managers.SpawnManager spawner = FindObjectOfType<Managers.SpawnManager>();
-            if (spawner != null)
-                spawner.ClearAllEnemies();
-
-            gameManager?.ReturnToMenu();
+            comboText.text = combo > 1 ? $"Combo x{combo}!" : "";
+            comboText.color = combo >= 4 ? Color.red : Color.yellow;
         }
+    }
 
-        private void OnResumeClicked()
+    public void UpdateHealth(int current, int max)
+    {
+        if (healthText != null) healthText.text = $"HP: {current}/{max}";
+        if (healthBarFill != null)
         {
-            Managers.AudioManager.Instance?.PlayButtonClickSound();
-            gameManager?.TogglePause();
+            float pct = (float)current / max;
+            healthBarFill.fillAmount = pct;
+            healthBarFill.color = pct > 0.5f ? Color.green : (pct > 0.25f ? Color.yellow : Color.red);
         }
+    }
 
-        private void OnQuitClicked()
+    public void UpdateWave(int wave)
+    {
+        if (waveText != null) waveText.text = $"Wave: {wave}";
+    }
+
+    public void ShowWaveAnnouncement(int wave)
+    {
+        if (waveAnnouncementText != null)
         {
-            Managers.AudioManager.Instance?.PlayButtonClickSound();
-
-            #if UNITY_EDITOR
-                UnityEditor.EditorApplication.isPlaying = false;
-            #else
-                Application.Quit();
-            #endif
+            bool isBoss = wave % 5 == 0;
+            waveAnnouncementText.text = isBoss ? $"!! BOSS WAVE {wave} !!" : $"Wave {wave}";
+            waveAnnouncementText.color = isBoss ? Color.red : Color.white;
+            CancelInvoke(nameof(HideWaveAnnouncement));
+            Invoke(nameof(HideWaveAnnouncement), 2f);
         }
+    }
 
-        // ========== WAVE ANNOUNCEMENT ==========
+    void HideWaveAnnouncement()
+    {
+        if (waveAnnouncementText != null)
+            waveAnnouncementText.text = "";
+    }
 
-        private System.Collections.IEnumerator ShowWaveAnnouncement(int wave)
+    public void ShowPowerUpText(string text)
+    {
+        if (powerUpText != null)
         {
-            if (waveAnnouncementPanel != null && waveAnnouncementText != null)
-            {
-                waveAnnouncementText.text = "WAVE " + wave;
-                waveAnnouncementPanel.SetActive(true);
-
-                yield return new WaitForSeconds(announcementDuration);
-
-                waveAnnouncementPanel.SetActive(false);
-            }
+            powerUpText.text = $"+{text}!";
+            CancelInvoke(nameof(HidePowerUpText));
+            Invoke(nameof(HidePowerUpText), 1.5f);
         }
+    }
 
-        // ========== HUD POWER-UP ICONS ==========
+    void HidePowerUpText()
+    {
+        if (powerUpText != null)
+            powerUpText.text = "";
+    }
 
-        private void Update()
-        {
-            // Update power-up status icons
-            Player.PlayerController player = FindObjectOfType<Player.PlayerController>();
-            if (player != null)
-            {
-                if (shieldIcon != null)
-                    shieldIcon.gameObject.SetActive(player.IsShieldActive);
+    // ======================== UI HELPERS ========================
+    GameObject CreatePanel(Transform parent, string name, Color bgColor)
+    {
+        GameObject panel = new GameObject(name);
+        panel.transform.SetParent(parent, false);
+        RectTransform rt = panel.AddComponent<RectTransform>();
+        rt.anchorMin = Vector2.zero;
+        rt.anchorMax = Vector2.one;
+        rt.offsetMin = Vector2.zero;
+        rt.offsetMax = Vector2.zero;
 
-                if (rapidFireIcon != null)
-                    rapidFireIcon.gameObject.SetActive(player.IsRapidFireActive);
-            }
-        }
+        Image img = panel.AddComponent<Image>();
+        img.color = bgColor;
+        img.raycastTarget = (bgColor.a > 0);
 
-        private void OnDestroy()
-        {
-            // Unsubscribe from events
-            if (gameManager != null)
-            {
-                gameManager.OnScoreChanged -= UpdateScore;
-                gameManager.OnWaveChanged -= UpdateWave;
-                gameManager.OnGameStateChanged -= HandleGameStateChanged;
-            }
-        }
+        return panel;
+    }
+
+    GameObject CreateText(Transform parent, string name, string content,
+        Vector2 position, int fontSize, Color color, FontStyle style)
+    {
+        GameObject textObj = new GameObject(name);
+        textObj.transform.SetParent(parent, false);
+        RectTransform rt = textObj.AddComponent<RectTransform>();
+        rt.anchoredPosition = position;
+        rt.sizeDelta = new Vector2(800, 100);
+
+        Text text = textObj.AddComponent<Text>();
+        text.text = content;
+        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        if (text.font == null)
+            text.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        text.fontSize = fontSize;
+        text.color = color;
+        text.fontStyle = style;
+        text.alignment = TextAnchor.MiddleCenter;
+        text.horizontalOverflow = HorizontalWrapMode.Overflow;
+
+        return textObj;
+    }
+
+    void CreateButton(Transform parent, string name, string label,
+        Vector2 position, Vector2 size, Color textColor, UnityEngine.Events.UnityAction onClick)
+    {
+        GameObject btnObj = new GameObject(name);
+        btnObj.transform.SetParent(parent, false);
+        RectTransform rt = btnObj.AddComponent<RectTransform>();
+        rt.anchoredPosition = position;
+        rt.sizeDelta = size;
+
+        Image img = btnObj.AddComponent<Image>();
+        img.color = new Color(0.15f, 0.15f, 0.2f, 0.9f);
+
+        Button btn = btnObj.AddComponent<Button>();
+        ColorBlock cb = btn.colors;
+        cb.highlightedColor = new Color(0.3f, 0.3f, 0.4f);
+        cb.pressedColor = new Color(0.1f, 0.1f, 0.15f);
+        btn.colors = cb;
+        btn.onClick.AddListener(onClick);
+
+        // Button text
+        GameObject textObj = new GameObject("Text");
+        textObj.transform.SetParent(btnObj.transform, false);
+        RectTransform trt = textObj.AddComponent<RectTransform>();
+        trt.anchorMin = Vector2.zero;
+        trt.anchorMax = Vector2.one;
+        trt.offsetMin = Vector2.zero;
+        trt.offsetMax = Vector2.zero;
+
+        Text text = textObj.AddComponent<Text>();
+        text.text = label;
+        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        if (text.font == null)
+            text.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        text.fontSize = 28;
+        text.color = textColor;
+        text.fontStyle = FontStyle.Bold;
+        text.alignment = TextAnchor.MiddleCenter;
+    }
+
+    GameObject CreateUIImage(Transform parent, string name,
+        Vector2 position, Vector2 size, Color color)
+    {
+        GameObject obj = new GameObject(name);
+        obj.transform.SetParent(parent, false);
+        RectTransform rt = obj.AddComponent<RectTransform>();
+        rt.anchoredPosition = position;
+        rt.sizeDelta = size;
+
+        Image img = obj.AddComponent<Image>();
+        img.color = color;
+        img.type = Image.Type.Filled;
+        img.fillMethod = Image.FillMethod.Horizontal;
+
+        return obj;
     }
 }
