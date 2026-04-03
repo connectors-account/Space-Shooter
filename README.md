@@ -1,31 +1,119 @@
-# 🚀 Space Shooter - Unity Game
+# 🚀 Space Shooter - Unity Desktop Game
 
-A complete 2D space shooter game built with Unity and C#. Features player ship combat, 3 enemy types, power-ups, wave progression, and full UI.
+A complete space-shooter game built with Unity for Windows desktop. Features wave-based enemy spawning, multiple enemy types, power-ups, parallax scrolling backgrounds, procedural audio, and a full UI system.
 
-![Unity](https://img.shields.io/badge/Unity-2021.3%2B-blue)
-![C#](https://img.shields.io/badge/C%23-.NET-purple)
-![Platform](https://img.shields.io/badge/Platform-Windows-green)
+![Game Type: 2D Space Shooter](https://img.shields.io/badge/Genre-Space%20Shooter-blue)
+![Platform: Windows](https://img.shields.io/badge/Platform-Windows-green)
+![Engine: Unity](https://img.shields.io/badge/Engine-Unity%202021.3%2B-black)
 
 ---
 
 ## 🎮 Game Features
 
-- **Player ship** with smooth keyboard movement (Arrow Keys/WASD) and shooting (Spacebar)
-- **3 enemy types** with unique AI behaviors:
-  - **Basic** — Flies straight down, fires occasionally
-  - **Zigzag** — Weaves left/right, fires aimed shots at player
-  - **Tank** — Slow-moving, high health, fires burst shots
-- **Wave progression** — Enemies increase in number and difficulty each wave
-- **3 Power-up types:**
-  - 💚 **Health Pack** — Restores 30 HP
-  - 🔶 **Rapid Fire** — Doubles fire rate for 5 seconds
-  - 🔵 **Shield** — Blocks all damage for 8 seconds
-- **Collision system** with trigger-based 2D physics
-- **Health system** with invincibility frames after damage
-- **Score tracking** with persistent high score (saved via PlayerPrefs)
-- **Full UI system:** Main Menu → Gameplay HUD → Game Over Screen → Pause Menu
-- **Procedural star field** background with parallax scrolling
-- **Sound effects** for shooting, explosions, power-ups, and UI
+### Core Gameplay
+- **Player ship** with smooth WASD/Arrow key movement
+- **Shooting system** with Space bar firing
+- **Wave-based enemy spawning** with increasing difficulty
+- **4 enemy types**: Straight, Zigzag, Swooper, and Boss
+- **Boss battles** every 5 waves
+- **Collision detection** with trigger-based 2D physics
+- **Score system** with combo multiplier (up to 8x)
+- **High score persistence** via PlayerPrefs
+
+### Power-Up System
+- 🟡 **Rapid Fire** - Increased fire rate
+- 🟠 **Spread Shot** - 5-bullet spread pattern
+- 🔵 **Shield** - Absorbs damage for a duration
+- 🟢 **Health** - Restores 1 HP
+
+### Visual Effects
+- **Parallax scrolling starfield** with 3 depth layers
+- **Explosion particle effects** on enemy/player death
+- **Shield visual** around player when active
+- **Damage flash** on enemies when hit
+- **Player invincibility blink** after taking damage
+
+### Audio
+- **Procedurally generated sound effects** (no external audio files needed)
+  - Shoot, explosion, hit, power-up, and menu select sounds
+- **Ambient background music** (procedural drone)
+
+### UI System
+- **Main Menu** with Start Game, Quit, controls info, and high score
+- **Game HUD** with score, combo multiplier, health bar, and wave counter
+- **Pause Menu** (Esc key) with Resume, Main Menu, and Quit
+- **Game Over Screen** with final score, wave reached, and high score
+- **Wave announcements** and power-up pickup notifications
+
+---
+
+## 📋 Prerequisites
+
+- **Unity 2021.3 LTS** or newer (2022.x or 2023.x also work)
+  - Download from: https://unity.com/download
+  - During installation, make sure to include:
+    - **Windows Build Support (IL2CPP)** or **Windows Build Support (Mono)**
+- **Windows 10/11** (for building the .exe)
+
+---
+
+## 🛠️ Setup Instructions
+
+### Step 1: Open Project in Unity
+
+1. Open **Unity Hub**
+2. Click **"Open"** (or "Add project from disk")
+3. Navigate to this project folder (`space_shooter_game/`)
+4. Select the folder and click **Open**
+5. Unity will import the project (this may take a few minutes on first open)
+
+### Step 2: Run Auto-Setup
+
+Once Unity finishes importing:
+
+1. In the Unity menu bar, click: **SpaceShooter > Setup Game (Full Auto Setup)**
+2. Click **"Yes, Set Up Everything"** in the confirmation dialog
+3. Wait for setup to complete (creates sprites, prefabs, scene, and configures settings)
+4. You'll see a success dialog when done
+
+### Step 3: Test the Game
+
+1. Press the **Play ▶** button in Unity Editor
+2. The Main Menu should appear
+3. Click **START GAME** to play
+4. Use **WASD/Arrow Keys** to move, **Space** to shoot, **Esc** to pause
+
+---
+
+## 🏗️ Build Instructions (Windows .exe)
+
+### Method 1: Unity Editor GUI
+
+1. Go to **File > Build Settings**
+2. Ensure **"Windows, Mac, Linux"** (Standalone) is selected as the platform
+3. Ensure **"Assets/Scenes/MainScene"** is listed in the Scenes list
+   - If not, click **"Add Open Scenes"**
+4. Click **"Player Settings..."** and verify:
+   - Product Name: "Space Shooter"
+   - Default Screen Width: 800
+   - Default Screen Height: 600
+   - Fullscreen Mode: Windowed
+5. Click **"Build"**
+6. Choose an output folder (e.g., `Build/`)
+7. Wait for the build to complete
+8. Run `Space Shooter.exe` from the build folder
+
+### Method 2: Command Line Build
+
+```bash
+# From command line (adjust Unity path for your installation)
+"C:\Program Files\Unity\Hub\Editor\2021.3.xxf1\Editor\Unity.exe" \
+  -batchmode \
+  -nographics \
+  -projectPath "path/to/space_shooter_game" \
+  -buildWindows64Player "path/to/Build/SpaceShooter.exe" \
+  -quit
+```
 
 ---
 
@@ -36,209 +124,103 @@ space_shooter_game/
 ├── Assets/
 │   ├── Scripts/
 │   │   ├── Player/
-│   │   │   └── PlayerController.cs      # Ship movement, shooting, health, power-ups
+│   │   │   ├── PlayerController.cs    # Movement, shooting, power-up activation
+│   │   │   └── PlayerHealth.cs        # Health, damage, invincibility, death
 │   │   ├── Enemy/
-│   │   │   └── EnemyController.cs       # 3 enemy types with AI, shooting, drops
+│   │   │   ├── EnemyBase.cs           # Movement patterns (4 types), shooting AI
+│   │   │   ├── EnemyHealth.cs         # Health, damage flash, death, loot drops
+│   │   │   └── EnemySpawner.cs        # Wave system, difficulty progression
 │   │   ├── Weapons/
-│   │   │   └── BulletController.cs      # Universal bullet behavior
+│   │   │   └── Bullet.cs              # Projectile movement, collision handling
 │   │   ├── PowerUps/
-│   │   │   └── PowerUpController.cs     # 3 power-up types with effects
+│   │   │   └── PowerUp.cs             # Power-up types, pickup, visual feedback
 │   │   ├── Managers/
-│   │   │   ├── GameManager.cs           # Score, waves, game state machine
-│   │   │   ├── SpawnManager.cs          # Enemy wave spawning logic
-│   │   │   └── AudioManager.cs          # Centralized sound management
+│   │   │   ├── GameManager.cs         # Game state (menu/play/pause/gameover)
+│   │   │   ├── ScoreManager.cs        # Score tracking, combos, high scores
+│   │   │   └── AudioManager.cs        # Procedural SFX and music generation
 │   │   ├── UI/
-│   │   │   └── UIManager.cs             # All UI panels and HUD
-│   │   ├── Environment/
-│   │   │   ├── ParallaxBackground.cs    # 2-layer parallax scrolling
-│   │   │   └── StarField.cs             # Procedural star generation
-│   │   └── Utils/
-│   │       ├── ScreenBounds.cs          # Screen boundary calculations
-│   │       ├── AutoDestroy.cs           # Timed object cleanup
-│   │       └── ExplosionEffect.cs       # Visual explosion animation
-│   ├── Sprites/                         # All sprite assets (PNG)
-│   │   ├── player_ship.png
-│   │   ├── player_bullet.png
-│   │   ├── enemy_bullet.png
-│   │   ├── enemy_basic.png
-│   │   ├── enemy_zigzag.png
-│   │   ├── enemy_tank.png
-│   │   ├── powerup_health.png
-│   │   ├── powerup_rapidfire.png
-│   │   ├── powerup_shield.png
-│   │   ├── shield_bubble.png
-│   │   ├── bg_layer1.png
-│   │   ├── bg_layer2.png
-│   │   └── explosion.png
-│   ├── Audio/                           # All sound effects (WAV)
-│   │   ├── shoot.wav
-│   │   ├── explosion.wav
-│   │   ├── powerup.wav
-│   │   ├── player_hit.wav
-│   │   ├── wave_start.wav
-│   │   ├── game_over.wav
-│   │   └── button_click.wav
-│   ├── Prefabs/                         # (Created in Unity Editor)
-│   ├── Scenes/                          # (Created in Unity Editor)
-│   ├── Materials/
-│   └── Animations/
+│   │   │   └── UIManager.cs           # All UI panels built programmatically
+│   │   ├── Effects/
+│   │   │   ├── EffectsManager.cs      # Explosion particle spawning
+│   │   │   └── ParallaxBackground.cs  # 3-layer scrolling starfield
+│   │   └── Editor/
+│   │       └── GameSetup.cs           # Auto-setup: creates scene, prefabs, sprites
+│   ├── Scenes/
+│   │   └── MainScene.unity            # (Created by auto-setup)
+│   ├── Prefabs/                        # (Created by auto-setup)
+│   │   ├── PlayerBullet.prefab
+│   │   ├── EnemyBullet.prefab
+│   │   ├── EnemyStraight.prefab
+│   │   ├── EnemyZigzag.prefab
+│   │   ├── EnemySwooper.prefab
+│   │   ├── EnemyBoss.prefab
+│   │   └── PowerUp.prefab
+│   ├── Sprites/                        # (Created by auto-setup)
+│   │   ├── PlayerShip.png
+│   │   ├── EnemyStraight.png
+│   │   ├── EnemyZigzag.png
+│   │   ├── EnemySwooper.png
+│   │   ├── EnemyBoss.png
+│   │   ├── PlayerBullet.png
+│   │   ├── EnemyBullet.png
+│   │   └── PowerUp.png
+│   └── Materials/
+│       └── BackgroundMat.mat           # (Created by auto-setup)
 ├── ProjectSettings/
 │   ├── ProjectSettings.asset
 │   ├── TagManager.asset
 │   ├── Physics2DSettings.asset
-│   └── InputManager.asset
-├── SETUP_GUIDE.md                       # Detailed step-by-step Unity setup
-└── README.md                            # This file
+│   ├── InputManager.asset
+│   ├── QualitySettings.asset
+│   ├── AudioManager.asset
+│   ├── TimeManager.asset
+│   └── EditorBuildSettings.asset
+├── Packages/
+│   └── manifest.json
+├── .gitignore
+└── README.md
 ```
 
 ---
 
-## 🛠️ Quick Start
+## 🎮 Controls
 
-### Prerequisites
-- [Unity Hub](https://unity.com/download) installed
-- Unity Editor **2021.3 LTS** or newer (2022.3 LTS recommended)
-- Windows 10/11 for building Windows executables
-
-### Opening the Project
-1. Open **Unity Hub**
-2. Click **"Open"** → navigate to the `space_shooter_game` folder → Select it
-3. Unity imports all assets automatically (~1-2 min)
-4. Open `Assets/Scenes/GameScene.unity` (create it if needed per SETUP_GUIDE.md)
-
-### First-Time Setup
-👉 **See [SETUP_GUIDE.md](SETUP_GUIDE.md) for complete step-by-step instructions** on:
-- Creating the game scene
-- Setting up all GameObjects and prefabs
-- Configuring the UI Canvas
-- Wiring up all script references
-- Testing and building
-
----
-
-## 🏗️ Building for Windows (.exe)
-
-1. Open **File → Build Settings** in Unity
-2. Add your game scene to **Scenes In Build**
-3. Select **PC, Mac & Linux Standalone** platform
-4. Set Target Platform: **Windows**, Architecture: **x86_64**
-5. Configure in **Player Settings**:
-   - Product Name: `Space Shooter`
-   - Resolution: 1024 × 768
-   - Fullscreen Mode: Windowed
-6. Click **Build**
-7. Choose output folder → Wait for build
-8. Run the generated `.exe` file!
-
-### Distribution
-Zip the entire build output folder:
-```
-SpaceShooter_Build/
-├── Space Shooter.exe
-├── Space Shooter_Data/
-├── UnityPlayer.dll
-└── MonoBleedingEdge/
-```
-
----
-
-## 🎯 Controls
-
-| Key | Action |
-|---|---|
-| `↑ ↓ ← →` or `W A S D` | Move ship |
-| `Spacebar` | Fire weapon |
-| `ESC` | Pause / Resume |
-
----
-
-## 📋 Script Reference
-
-### Core Scripts
-
-| Script | Namespace | Purpose |
-|---|---|---|
-| `PlayerController.cs` | `SpaceShooter.Player` | Player movement, shooting, health, power-up activation |
-| `EnemyController.cs` | `SpaceShooter.Enemy` | Enemy AI (3 types), shooting patterns, health, power-up drops |
-| `BulletController.cs` | `SpaceShooter.Weapons` | Bullet movement, damage, lifetime management |
-| `PowerUpController.cs` | `SpaceShooter.PowerUps` | Power-up drift, bob animation, effect application |
-
-### Manager Scripts
-
-| Script | Pattern | Purpose |
-|---|---|---|
-| `GameManager.cs` | Singleton | Game state machine, score, wave progression, high score |
-| `SpawnManager.cs` | Component | Wave-based enemy spawning with difficulty scaling |
-| `AudioManager.cs` | Singleton | Centralized SFX and music playback |
-
-### UI & Environment
-
-| Script | Purpose |
-|---|---|
-| `UIManager.cs` | Main menu, HUD, game over, pause panel management |
-| `ParallaxBackground.cs` | 2-layer infinite scrolling background |
-| `StarField.cs` | Procedural star field generation |
-| `ScreenBounds.cs` | Screen-to-world boundary utility |
-| `ExplosionEffect.cs` | Animated explosion visual effect |
-| `AutoDestroy.cs` | Timed auto-destruction for temporary objects |
-
----
-
-## ⚙️ Architecture
-
-### Game State Machine
-```
-MainMenu → Playing → Paused → Playing → GameOver → MainMenu
-                                    └─────────────→ GameOver
-```
-
-### Event-Driven Communication
-- `GameManager` fires events: `OnScoreChanged`, `OnWaveChanged`, `OnGameStateChanged`
-- `PlayerController` fires events: `OnHealthChanged`, `OnPlayerDeath`
-- `EnemyController` fires events: `OnEnemyDestroyed`
-- `UIManager` subscribes to all events to update display
-
-### Collision Matrix
-| Object A | Object B | Result |
-|---|---|---|
-| PlayerBullet | Enemy | Enemy takes damage, bullet destroyed |
-| EnemyBullet | Player | Player takes damage, bullet destroyed |
-| Enemy | Player | Player takes contact damage |
-| PowerUp | Player | Power-up effect applied, pickup destroyed |
+| Action     | Key(s)           |
+|------------|------------------|
+| Move       | WASD / Arrow Keys|
+| Shoot      | Space            |
+| Pause      | Escape           |
 
 ---
 
 ## 🔧 Customization
 
-### Adjusting Difficulty
-In `GameManager` inspector:
-- `Enemies Per Wave Base` — Starting enemies (default: 5)
-- `Enemies Per Wave Increment` — Extra enemies per wave (default: 3)
-- `Wave Cooldown` — Seconds between waves (default: 3)
+### Difficulty Tuning
+Select objects in the Unity Inspector to adjust:
+- **EnemySpawner**: `baseEnemiesPerWave`, `enemiesPerWaveIncrease`, `spawnInterval`
+- **PlayerHealth**: `maxHealth`, `invincibilityDuration`
+- **PlayerController**: `moveSpeed`, `fireRate`, `bulletSpeed`
+- **EnemyBase**: `moveSpeed`, `shootInterval`, per enemy type
 
-In `SpawnManager` inspector:
-- `Base Spawn Interval` — Time between enemy spawns (default: 1.5s)
-- `Spawn Interval Reduction` — Faster spawns per wave (default: 0.1s)
-
-### Adjusting Player
-- `Move Speed` — Ship speed (default: 8)
-- `Fire Rate` — Seconds between shots (default: 0.25)
-- `Max Health` — Starting HP (default: 100)
-- `Invincibility Duration` — I-frames after hit (default: 1.5s)
-
-### Enemy Types
-Each enemy type has configurable health, speed, score value, and fire rate in the inspector.
+### Adding New Enemy Types
+1. Create a new sprite in `Assets/Sprites/`
+2. Add a new `EnemyType` enum value in `EnemyBase.cs`
+3. Implement movement logic in `HandleMovement()`
+4. Create a prefab with the Editor script or manually
 
 ---
 
-## 📝 License
+## 📝 Technical Notes
 
-This project is provided as-is for educational purposes. Feel free to modify and distribute.
+- **No external assets required** - all sprites are pixel art generated by the Editor setup script
+- **No external audio files** - all sounds are procedurally generated at runtime
+- **All UI is built programmatically** - no manual UI prefab setup needed
+- **Singleton pattern** used for managers (GameManager, ScoreManager, AudioManager, UIManager)
+- **Tag-based identification** for game objects (Player, Enemy, Bullet, PowerUp)
+- **Trigger-based 2D collisions** for all gameplay interactions
 
 ---
 
-## 🙏 Credits
+## 📄 License
 
-- Built with **Unity Engine**
-- Placeholder sprites generated programmatically (replace with your own art!)
-- Sound effects generated procedurally (replace with proper audio assets!)
+Free to use, modify, and distribute. No attribution required.
