@@ -1,68 +1,70 @@
 using UnityEngine;
 
 /// <summary>
-/// Controls bullet movement and behavior for both player and enemy bullets.
+/// BulletController - Moves the bullet in a given direction and handles collision.
+/// Attach to bullet prefabs with Rigidbody2D and CircleCollider2D (trigger).
+/// Tag player bullets as "PlayerBullet" and enemy bullets as "EnemyBullet".
 /// </summary>
+[RequireComponent(typeof(Rigidbody2D))]
+[RequireComponent(typeof(CircleCollider2D))]
 public class BulletController : MonoBehaviour
 {
     [Header("Bullet Settings")]
-    [SerializeField] private float speed = 12f;
-    [SerializeField] private float lifetime = 3f;
+    public float speed = 10f;
+    public int damage = 1;
+    public bool isPlayerBullet = true;
+    public float lifetime = 5f;
 
-    private Vector3 moveDirection = Vector3.up;
-    private bool isPlayerBullet = true;
+    private Rigidbody2D rb;
+    private Vector2 direction;
 
-    public bool IsPlayerBullet => isPlayerBullet;
+    private void Awake()
+    {
+        rb = GetComponent<Rigidbody2D>();
+        rb.gravityScale = 0f;
+        rb.freezeRotation = true;
+
+        CircleCollider2D col = GetComponent<CircleCollider2D>();
+        col.isTrigger = true;
+    }
+
+    /// <summary>
+    /// Call this immediately after Instantiate to set direction, speed, and ownership.
+    /// </summary>
+    public void Initialize(Vector2 dir, float spd, bool playerBullet, int dmg = 1)
+    {
+        direction = dir.normalized;
+        speed = spd;
+        isPlayerBullet = playerBullet;
+        damage = dmg;
+
+        // Set tag based on ownership
+        gameObject.tag = isPlayerBullet ? "PlayerBullet" : "EnemyBullet";
+
+        // Rotate bullet to face movement direction
+        float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg - 90f;
+        transform.rotation = Quaternion.Euler(0, 0, angle);
+    }
 
     private void Start()
     {
-        // Destroy bullet after lifetime expires
+        // Self-destruct after lifetime to prevent orphan bullets
         Destroy(gameObject, lifetime);
     }
 
+    private void FixedUpdate()
+    {
+        rb.linearVelocity = direction * speed;
+    }
+
+    /// <summary>
+    /// Destroy bullet if it goes far off-screen.
+    /// </summary>
     private void Update()
     {
-        Move();
-    }
-
-    private void Move()
-    {
-        transform.Translate(moveDirection * speed * Time.deltaTime, Space.World);
-    }
-
-    /// <summary>
-    /// Initialize the bullet with direction and ownership.
-    /// </summary>
-    /// <param name="playerBullet">True if fired by player, false if fired by enemy</param>
-    /// <param name="direction">Direction the bullet should travel</param>
-    public void Initialize(bool playerBullet, Vector3 direction)
-    {
-        isPlayerBullet = playerBullet;
-        moveDirection = direction.normalized;
-
-        // Set appropriate tag based on ownership
-        if (playerBullet)
+        if (Mathf.Abs(transform.position.x) > 20f || Mathf.Abs(transform.position.y) > 15f)
         {
-            gameObject.tag = "PlayerBullet";
+            Destroy(gameObject);
         }
-        else
-        {
-            gameObject.tag = "EnemyBullet";
-        }
-
-        // Rotate bullet to face movement direction
-        if (direction != Vector3.zero)
-        {
-            float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg - 90f;
-            transform.rotation = Quaternion.Euler(0f, 0f, angle);
-        }
-    }
-
-    /// <summary>
-    /// Set bullet speed.
-    /// </summary>
-    public void SetSpeed(float newSpeed)
-    {
-        speed = newSpeed;
     }
 }

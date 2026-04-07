@@ -1,172 +1,265 @@
 using UnityEngine;
 
 /// <summary>
-/// Controls the player ship movement, shooting, and health management.
+/// PlayerController - Handles player movement, shooting, health, and power-up effects.
+/// Attach to the Player ship GameObject with a Rigidbody2D, BoxCollider2D (trigger), and SpriteRenderer.
 /// </summary>
+[RequireComponent(typeof(Rigidbody2D))]
+[RequireComponent(typeof(BoxCollider2D))]
 public class PlayerController : MonoBehaviour
 {
-    [Header("Movement Settings")]
-    [SerializeField] private float moveSpeed = 8f;
-    [SerializeField] private float horizontalBoundary = 8f;
-    [SerializeField] private float verticalBoundaryTop = 4f;
-    [SerializeField] private float verticalBoundaryBottom = -4f;
+    [Header("Movement")]
+    public float moveSpeed = 8f;
+    public float screenPadding = 0.5f;
 
-    [Header("Shooting Settings")]
-    [SerializeField] private GameObject bulletPrefab;
-    [SerializeField] private Transform firePoint;
-    [SerializeField] private float fireRate = 0.25f;
+    [Header("Shooting")]
+    public GameObject bulletPrefab;
+    public Transform firePoint;
+    public float fireRate = 0.25f;
+    public float rapidFireRate = 0.1f;
+    public float rapidFireDuration = 5f;
+    public float bulletSpeed = 12f;
 
-    [Header("Health Settings")]
-    [SerializeField] private int maxHealth = 3;
+    [Header("Invincibility")]
+    public float invincibilityDuration = 2f;
+    public float blinkInterval = 0.15f;
 
-    private int currentHealth;
-    private float nextFireTime = 0f;
-    private bool canControl = true;
+    [Header("Audio")]
+    public AudioSource shootAudioSource;
+    public AudioSource hitAudioSource;
+    public AudioSource powerUpAudioSource;
 
-    public int CurrentHealth => currentHealth;
-    public int MaxHealth => maxHealth;
+    private Rigidbody2D rb;
+    private SpriteRenderer spriteRenderer;
+    private float nextFireTime;
+    private float currentFireRate;
+    private float rapidFireEndTime;
+    private bool isInvincible;
+    private float invincibilityEndTime;
+    private bool isAlive = true;
+
+    // Screen bounds
+    private float minX, maxX, minY, maxY;
+
+    private void Awake()
+    {
+        rb = GetComponent<Rigidbody2D>();
+        spriteRenderer = GetComponent<SpriteRenderer>();
+        rb.gravityScale = 0f;
+        rb.freezeRotation = true;
+
+        BoxCollider2D col = GetComponent<BoxCollider2D>();
+        col.isTrigger = true;
+    }
 
     private void Start()
     {
-        currentHealth = maxHealth;
-        UpdateHealthUI();
+        currentFireRate = fireRate;
+        CalculateScreenBounds();
+
+        // Create fire point if not assigned
+        if (firePoint == null)
+        {
+            GameObject fp = new GameObject("FirePoint");
+            fp.transform.SetParent(transform);
+            fp.transform.localPosition = new Vector3(0f, 0.6f, 0f);
+            firePoint = fp.transform;
+        }
     }
 
     private void Update()
     {
-        if (!canControl || GameManager.Instance == null || GameManager.Instance.IsGameOver)
-            return;
+        if (!isAlive || (GameManager.Instance != null && GameManager.Instance.IsGameOver)) return;
+        if (GameManager.Instance != null && GameManager.Instance.IsPaused) return;
+
+        HandleShooting();
+        HandlePowerUpTimers();
+        HandleInvincibility();
+    }
+
+    private void FixedUpdate()
+    {
+        if (!isAlive || (GameManager.Instance != null && GameManager.Instance.IsGameOver)) return;
+        if (GameManager.Instance != null && GameManager.Instance.IsPaused) return;
 
         HandleMovement();
-        HandleShooting();
     }
 
+    /// <summary>
+    /// Read WASD / Arrow key input and move the ship, clamped to screen bounds.
+    /// </summary>
     private void HandleMovement()
     {
-        float horizontalInput = Input.GetAxis("Horizontal");
-        float verticalInput = Input.GetAxis("Vertical");
+        float h = Input.GetAxisRaw("Horizontal");
+        float v = Input.GetAxisRaw("Vertical");
 
-        // WASD and Arrow keys are both mapped to Horizontal/Vertical by default in Unity
-        Vector3 movement = new Vector3(horizontalInput, verticalInput, 0f) * moveSpeed * Time.deltaTime;
-        transform.Translate(movement, Space.World);
+        Vector2 direction = new Vector2(h, v).normalized;
+        rb.linearVelocity = direction * moveSpeed;
 
-        // Clamp position to screen boundaries
-        float clampedX = Mathf.Clamp(transform.position.x, -horizontalBoundary, horizontalBoundary);
-        float clampedY = Mathf.Clamp(transform.position.y, verticalBoundaryBottom, verticalBoundaryTop);
-        transform.position = new Vector3(clampedX, clampedY, transform.position.z);
+        // Clamp position to screen bounds
+        Vector3 pos = transform.position;
+        pos.x = Mathf.Clamp(pos.x, minX, maxX);
+        pos.y = Mathf.Clamp(pos.y, minY, maxY);
+        transform.position = pos;
     }
 
+    /// <summary>
+    /// Fire a bullet upward when Space is pressed, respecting fire rate.
+    /// </summary>
     private void HandleShooting()
     {
         if (Input.GetKey(KeyCode.Space) && Time.time >= nextFireTime)
         {
-            Shoot();
-            nextFireTime = Time.time + fireRate;
+            nextFireTime = Time.time + currentFireRate;
+            FireBullet();
         }
     }
 
-    private void Shoot()
+    private void FireBullet()
     {
-        if (bulletPrefab == null)
+        if (bulletPrefab == null) return;
+
+        GameObject bullet = Instantiate(bulletPrefab, firePoint.position, Quaternion.identity);
+        BulletController bc = bullet.GetComponent<BulletController>();
+        if (bc != null)
         {
-            Debug.LogWarning("Bullet prefab not assigned to PlayerController!");
-            return;
+            bc.Initialize(Vector2.up, bulletSpeed, true, 1);
         }
 
-        Vector3 spawnPosition = firePoint != null ? firePoint.position : transform.position + Vector3.up * 0.5f;
-        GameObject bullet = Instantiate(bulletPrefab, spawnPosition, Quaternion.identity);
-        
-        BulletController bulletController = bullet.GetComponent<BulletController>();
-        if (bulletController != null)
-        {
-            bulletController.Initialize(true, Vector3.up);
-        }
+        if (shootAudioSource != null)
+            shootAudioSource.Play();
     }
 
-    public void TakeDamage(int damage)
+    /// <summary>
+    /// Called when the player is hit by an enemy or enemy bullet.
+    /// </summary>
+    public void TakeDamage()
     {
-        currentHealth -= damage;
-        currentHealth = Mathf.Max(currentHealth, 0);
-        
-        UpdateHealthUI();
+        if (isInvincible || !isAlive) return;
 
-        if (currentHealth <= 0)
+        if (hitAudioSource != null)
+            hitAudioSource.Play();
+
+        if (GameManager.Instance != null)
+        {
+            GameManager.Instance.LoseLife();
+
+            if (GameManager.Instance.PlayerLives > 0)
+            {
+                StartInvincibility();
+            }
+            else
+            {
+                Die();
+            }
+        }
+        else
         {
             Die();
         }
     }
 
-    private void UpdateHealthUI()
+    private void Die()
     {
-        if (UIManager.Instance != null)
+        isAlive = false;
+        spriteRenderer.enabled = false;
+        // Disable collider
+        GetComponent<BoxCollider2D>().enabled = false;
+        rb.linearVelocity = Vector2.zero;
+    }
+
+    private void StartInvincibility()
+    {
+        isInvincible = true;
+        invincibilityEndTime = Time.time + invincibilityDuration;
+    }
+
+    private void HandleInvincibility()
+    {
+        if (!isInvincible) return;
+
+        // Blink effect
+        float t = Mathf.PingPong(Time.time / blinkInterval, 1f);
+        spriteRenderer.enabled = t > 0.5f;
+
+        if (Time.time >= invincibilityEndTime)
         {
-            UIManager.Instance.UpdateHealth(currentHealth, maxHealth);
+            isInvincible = false;
+            spriteRenderer.enabled = true;
         }
     }
 
-    private void Die()
+    /// <summary>
+    /// Activate rapid-fire power-up.
+    /// </summary>
+    public void ActivateRapidFire()
     {
-        canControl = false;
-        
+        currentFireRate = rapidFireRate;
+        rapidFireEndTime = Time.time + rapidFireDuration;
+
+        if (powerUpAudioSource != null)
+            powerUpAudioSource.Play();
+    }
+
+    /// <summary>
+    /// Restore one life (health power-up).
+    /// </summary>
+    public void RestoreHealth()
+    {
         if (GameManager.Instance != null)
-        {
-            GameManager.Instance.GameOver();
-        }
+            GameManager.Instance.RestoreLife();
 
-        // Visual feedback - disable renderer instead of destroying
-        SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null)
-        {
-            spriteRenderer.enabled = false;
-        }
+        if (powerUpAudioSource != null)
+            powerUpAudioSource.Play();
+    }
 
-        // Disable collider
-        Collider2D col = GetComponent<Collider2D>();
-        if (col != null)
+    private void HandlePowerUpTimers()
+    {
+        // Rapid fire expires
+        if (currentFireRate < fireRate && Time.time >= rapidFireEndTime)
         {
-            col.enabled = false;
+            currentFireRate = fireRate;
         }
+    }
+
+    private void CalculateScreenBounds()
+    {
+        Camera cam = Camera.main;
+        if (cam == null) return;
+
+        float halfHeight = cam.orthographicSize;
+        float halfWidth = halfHeight * cam.aspect;
+
+        minX = -halfWidth + screenPadding;
+        maxX = halfWidth - screenPadding;
+        minY = -halfHeight + screenPadding;
+        maxY = halfHeight - screenPadding;
     }
 
     private void OnTriggerEnter2D(Collider2D other)
     {
-        // Handle collision with enemy
-        if (other.CompareTag("Enemy"))
+        if (!isAlive) return;
+
+        // Hit by enemy bullet
+        if (other.CompareTag("EnemyBullet"))
         {
-            TakeDamage(1);
-            
-            EnemyController enemy = other.GetComponent<EnemyController>();
-            if (enemy != null)
-            {
-                enemy.TakeDamage(enemy.MaxHealth); // Destroy enemy on collision
-            }
-        }
-        // Handle collision with enemy bullet
-        else if (other.CompareTag("EnemyBullet"))
-        {
-            TakeDamage(1);
+            TakeDamage();
             Destroy(other.gameObject);
         }
-    }
-
-    public void ResetPlayer()
-    {
-        currentHealth = maxHealth;
-        canControl = true;
-        transform.position = new Vector3(0f, -3f, 0f);
-        
-        SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null)
+        // Collided with enemy
+        else if (other.CompareTag("Enemy"))
         {
-            spriteRenderer.enabled = true;
+            TakeDamage();
         }
-
-        Collider2D col = GetComponent<Collider2D>();
-        if (col != null)
+        // Picked up power-up
+        else if (other.CompareTag("PowerUp"))
         {
-            col.enabled = true;
+            PowerUpController pu = other.GetComponent<PowerUpController>();
+            if (pu != null)
+            {
+                pu.ApplyEffect(this);
+            }
+            Destroy(other.gameObject);
         }
-
-        UpdateHealthUI();
     }
 }

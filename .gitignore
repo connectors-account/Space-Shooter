@@ -6,18 +6,12 @@
 /[Bb]uilds/
 /[Ll]ogs/
 /[Uu]ser[Ss]ettings/
-
-# MemoryCaptures
 /[Mm]emoryCaptures/
 
-# Asset meta data
-*.pidb.meta
-*.pdb.meta
-*.mdb.meta
-
-# Unity3D generated meta files
-*.pidb
-*.unityproj
+# IDE
+.vs/
+.vscode/
+*.csproj
 *.sln
 *.suo
 *.tmp
@@ -31,20 +25,9 @@
 *.opendb
 *.VC.db
 
-# Unity Package Manager
-/[Pp]ackages/packages-lock.json
-
-# OS generated
+# OS
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
-
-# Crashlytics
-crashlytics-build.properties
 
 # Builds
 *.apk
@@ -52,8 +35,5 @@ crashlytics-build.properties
 *.unitypackage
 *.app
 
-# IDE
-.idea/
-.vs/
-*.csproj
-*.sln
+# Crashlytics
+crashlytics-build.properties
