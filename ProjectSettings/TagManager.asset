@@ -22,33 +22,14 @@ TagManager:
   - Bullet
   - PowerUp
   - Background
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
   m_SortingLayers:
-  - name: Background
-    uniqueID: 1
-    locked: 0
   - name: Default
     uniqueID: 0
     locked: 0
-  - name: Foreground
+  - name: Background
+    uniqueID: 1
+    locked: 0
+  - name: Gameplay
     uniqueID: 2
     locked: 0
   - name: UI

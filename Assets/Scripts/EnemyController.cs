@@ -1,96 +1,211 @@
 using UnityEngine;
 
 /// <summary>
-/// Controls enemy ship behavior including movement, shooting, and health.
+/// EnemyController - Handles enemy movement patterns, shooting, health, and scoring.
+/// Attach to each enemy prefab with Rigidbody2D, BoxCollider2D (trigger), SpriteRenderer.
 /// </summary>
+[RequireComponent(typeof(Rigidbody2D))]
+[RequireComponent(typeof(BoxCollider2D))]
 public class EnemyController : MonoBehaviour
 {
-    [Header("Movement Settings")]
-    [SerializeField] private float moveSpeed = 3f;
-    [SerializeField] private float horizontalMovement = 0f;
+    public enum EnemyType
+    {
+        /// <summary>Moves straight down. Simple cannon fodder.</summary>
+        Straight,
+        /// <summary>Moves in a sine-wave pattern.</summary>
+        Zigzag,
+        /// <summary>Moves toward the player, faster and tougher.</summary>
+        Chaser
+    }
 
-    [Header("Shooting Settings")]
-    [SerializeField] private GameObject bulletPrefab;
-    [SerializeField] private float fireRate = 2f;
-    [SerializeField] private bool canShoot = true;
+    [Header("Type & Stats")]
+    public EnemyType enemyType = EnemyType.Straight;
+    public int health = 1;
+    public int scoreValue = 100;
+    public float moveSpeed = 3f;
 
-    [Header("Health & Score")]
-    [SerializeField] private int maxHealth = 1;
-    [SerializeField] private int scoreValue = 100;
-
-    [Header("Boundaries")]
-    [SerializeField] private float destroyY = -6f;
-
-    private int currentHealth;
+    [Header("Shooting")]
+    public bool canShoot = true;
+    public GameObject bulletPrefab;
+    public float fireRate = 2f;
+    public float bulletSpeed = 6f;
     private float nextFireTime;
 
-    public int MaxHealth => maxHealth;
-    public int ScoreValue => scoreValue;
+    [Header("Zigzag Settings")]
+    public float zigzagAmplitude = 3f;
+    public float zigzagFrequency = 2f;
+
+    [Header("Chaser Settings")]
+    public float chaseSpeed = 4f;
+
+    [Header("Power-Up Drop")]
+    public GameObject[] powerUpPrefabs;
+    [Range(0f, 1f)]
+    public float powerUpDropChance = 0.15f;
+
+    [Header("Audio")]
+    public AudioSource hitAudioSource;
+
+    private Rigidbody2D rb;
+    private float spawnX;
+    private float aliveTime;
+    private Transform playerTransform;
+
+    // Screen bounds for cleanup
+    private float screenBottom;
+
+    private void Awake()
+    {
+        rb = GetComponent<Rigidbody2D>();
+        rb.gravityScale = 0f;
+        rb.freezeRotation = true;
+
+        BoxCollider2D col = GetComponent<BoxCollider2D>();
+        col.isTrigger = true;
+
+        gameObject.tag = "Enemy";
+    }
 
     private void Start()
     {
-        currentHealth = maxHealth;
+        spawnX = transform.position.x;
+        aliveTime = 0f;
+
+        Camera cam = Camera.main;
+        if (cam != null)
+            screenBottom = -cam.orthographicSize - 2f;
+
+        // Find the player
+        GameObject player = GameObject.FindGameObjectWithTag("Player");
+        if (player != null)
+            playerTransform = player.transform;
+
+        // Randomize first shot time
         nextFireTime = Time.time + Random.Range(0.5f, fireRate);
-        
-        // Add slight random horizontal movement variation
-        horizontalMovement = Random.Range(-0.5f, 0.5f);
     }
 
     private void Update()
     {
-        if (GameManager.Instance != null && GameManager.Instance.IsGameOver)
+        if (GameManager.Instance != null && (GameManager.Instance.IsGameOver || GameManager.Instance.IsPaused))
             return;
 
-        Move();
+        aliveTime += Time.deltaTime;
         HandleShooting();
-        CheckBounds();
-    }
 
-    private void Move()
-    {
-        Vector3 movement = new Vector3(horizontalMovement, -1f, 0f).normalized * moveSpeed * Time.deltaTime;
-        transform.Translate(movement, Space.World);
-    }
-
-    private void HandleShooting()
-    {
-        if (!canShoot || bulletPrefab == null)
-            return;
-
-        if (Time.time >= nextFireTime)
-        {
-            Shoot();
-            nextFireTime = Time.time + fireRate + Random.Range(-0.5f, 0.5f);
-        }
-    }
-
-    private void Shoot()
-    {
-        Vector3 spawnPosition = transform.position + Vector3.down * 0.5f;
-        GameObject bullet = Instantiate(bulletPrefab, spawnPosition, Quaternion.identity);
-        
-        BulletController bulletController = bullet.GetComponent<BulletController>();
-        if (bulletController != null)
-        {
-            bulletController.Initialize(false, Vector3.down);
-        }
-    }
-
-    private void CheckBounds()
-    {
-        if (transform.position.y < destroyY)
+        // Destroy if off screen bottom
+        if (transform.position.y < screenBottom)
         {
             Destroy(gameObject);
         }
     }
 
+    private void FixedUpdate()
+    {
+        if (GameManager.Instance != null && (GameManager.Instance.IsGameOver || GameManager.Instance.IsPaused))
+        {
+            rb.linearVelocity = Vector2.zero;
+            return;
+        }
+
+        switch (enemyType)
+        {
+            case EnemyType.Straight:
+                MoveStraight();
+                break;
+            case EnemyType.Zigzag:
+                MoveZigzag();
+                break;
+            case EnemyType.Chaser:
+                MoveChaser();
+                break;
+        }
+    }
+
+    private void MoveStraight()
+    {
+        rb.linearVelocity = Vector2.down * moveSpeed;
+    }
+
+    private void MoveZigzag()
+    {
+        float xOffset = Mathf.Sin(aliveTime * zigzagFrequency) * zigzagAmplitude;
+        float targetX = spawnX + xOffset;
+        float xVel = (targetX - transform.position.x) * zigzagFrequency;
+        rb.linearVelocity = new Vector2(xVel, -moveSpeed);
+    }
+
+    private void MoveChaser()
+    {
+        if (playerTransform != null)
+        {
+            Vector2 direction = ((Vector2)playerTransform.position - (Vector2)transform.position).normalized;
+            // Bias downward so chaser doesn't endlessly orbit
+            direction = (direction + Vector2.down * 0.3f).normalized;
+            rb.linearVelocity = direction * chaseSpeed;
+        }
+        else
+        {
+            rb.linearVelocity = Vector2.down * moveSpeed;
+        }
+    }
+
+    private void HandleShooting()
+    {
+        if (!canShoot || bulletPrefab == null) return;
+        if (Time.time < nextFireTime) return;
+
+        nextFireTime = Time.time + fireRate;
+        FireBullet();
+    }
+
+    private void FireBullet()
+    {
+        Vector2 direction = Vector2.down;
+
+        // Chasers aim toward the player
+        if (enemyType == EnemyType.Chaser && playerTransform != null)
+        {
+            direction = ((Vector2)playerTransform.position - (Vector2)transform.position).normalized;
+        }
+
+        GameObject bullet = Instantiate(bulletPrefab, transform.position + Vector3.down * 0.5f, Quaternion.identity);
+        BulletController bc = bullet.GetComponent<BulletController>();
+        if (bc != null)
+        {
+            bc.Initialize(direction, bulletSpeed, false, 1);
+        }
+    }
+
+    /// <summary>
+    /// Apply damage to this enemy. Destroy if health <= 0.
+    /// </summary>
     public void TakeDamage(int damage)
     {
-        currentHealth -= damage;
-        
-        if (currentHealth <= 0)
+        health -= damage;
+
+        if (hitAudioSource != null)
+            hitAudioSource.Play();
+
+        if (health <= 0)
         {
             Die();
+        }
+        else
+        {
+            // Flash red briefly
+            StartCoroutine(FlashRed());
+        }
+    }
+
+    private System.Collections.IEnumerator FlashRed()
+    {
+        SpriteRenderer sr = GetComponent<SpriteRenderer>();
+        if (sr != null)
+        {
+            Color original = sr.color;
+            sr.color = Color.red;
+            yield return new WaitForSeconds(0.1f);
+            sr.color = original;
         }
     }
 
@@ -98,8 +213,16 @@ public class EnemyController : MonoBehaviour
     {
         // Add score
         if (GameManager.Instance != null)
-        {
             GameManager.Instance.AddScore(scoreValue);
+
+        // Chance to drop power-up
+        if (powerUpPrefabs != null && powerUpPrefabs.Length > 0 && Random.value <= powerUpDropChance)
+        {
+            int index = Random.Range(0, powerUpPrefabs.Length);
+            if (powerUpPrefabs[index] != null)
+            {
+                Instantiate(powerUpPrefabs[index], transform.position, Quaternion.identity);
+            }
         }
 
         Destroy(gameObject);
@@ -107,23 +230,18 @@ public class EnemyController : MonoBehaviour
 
     private void OnTriggerEnter2D(Collider2D other)
     {
-        // Handle collision with player bullet
+        // Hit by player bullet
         if (other.CompareTag("PlayerBullet"))
         {
-            TakeDamage(1);
+            BulletController bc = other.GetComponent<BulletController>();
+            int dmg = bc != null ? bc.damage : 1;
+            TakeDamage(dmg);
             Destroy(other.gameObject);
         }
-    }
-
-    /// <summary>
-    /// Configure enemy properties (called by spawner)
-    /// </summary>
-    public void Configure(float speed, int health, int score, bool shooting)
-    {
-        moveSpeed = speed;
-        maxHealth = health;
-        currentHealth = health;
-        scoreValue = score;
-        canShoot = shooting;
+        // Collided with player
+        else if (other.CompareTag("Player"))
+        {
+            TakeDamage(health); // Self-destruct on player collision
+        }
     }
 }
