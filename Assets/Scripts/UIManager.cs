@@ -2,44 +2,51 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// Manages all UI elements including health display, score, and game over screen.
+/// Manages all in-game UI: score display, health bar, and game-over screen.
+/// Uses Unity's built-in UI system (Canvas + Text + Image).
+/// Attach to the Canvas GameObject.
 /// </summary>
 public class UIManager : MonoBehaviour
 {
+    // --- Singleton ---
     public static UIManager Instance { get; private set; }
 
     [Header("HUD Elements")]
-    [SerializeField] private Text scoreText;
-    [SerializeField] private Text healthText;
-    [SerializeField] private Image[] healthIcons;
+    [Tooltip("Text component showing the current score.")]
+    public Text scoreText;
+
+    [Tooltip("Text component showing health as text (e.g. 'HP: 80/100').")]
+    public Text healthText;
+
+    [Tooltip("Image used as a health bar fill (set Image Type to Filled).")]
+    public Image healthBarFill;
 
     [Header("Game Over Panel")]
-    [SerializeField] private GameObject gameOverPanel;
-    [SerializeField] private Text gameOverScoreText;
-    [SerializeField] private Text highScoreText;
+    [Tooltip("The parent panel shown when the game ends.")]
+    public GameObject gameOverPanel;
 
-    [Header("Pause Menu")]
-    [SerializeField] private GameObject pauseMenuPanel;
+    [Tooltip("Text showing the final score on the game-over screen.")]
+    public Text finalScoreText;
 
-    private void Awake()
+    [Tooltip("Text showing restart instructions.")]
+    public Text restartText;
+
+    void Awake()
     {
-        // Singleton pattern
-        if (Instance == null)
-        {
-            Instance = this;
-        }
-        else
+        if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
             return;
         }
-    }
+        Instance = this;
 
-    private void Start()
-    {
-        // Ensure panels are hidden at start
-        HideGameOver();
-        HidePauseMenu();
+        // Hide game-over panel at start
+        if (gameOverPanel != null)
+            gameOverPanel.SetActive(false);
+
+        // Initialize displays
+        UpdateScore(0);
+        UpdateHealth(100, 100);
     }
 
     /// <summary>
@@ -48,120 +55,33 @@ public class UIManager : MonoBehaviour
     public void UpdateScore(int score)
     {
         if (scoreText != null)
-        {
-            scoreText.text = $"Score: {score}";
-        }
+            scoreText.text = "SCORE: " + score.ToString();
     }
 
     /// <summary>
-    /// Update the health display.
+    /// Update the health display (both text and bar).
     /// </summary>
-    public void UpdateHealth(int currentHealth, int maxHealth)
+    public void UpdateHealth(int current, int max)
     {
-        // Update text display
         if (healthText != null)
-        {
-            healthText.text = $"Health: {currentHealth}/{maxHealth}";
-        }
+            healthText.text = "HP: " + current + " / " + max;
 
-        // Update health icons if available
-        if (healthIcons != null && healthIcons.Length > 0)
-        {
-            for (int i = 0; i < healthIcons.Length; i++)
-            {
-                if (healthIcons[i] != null)
-                {
-                    healthIcons[i].enabled = i < currentHealth;
-                }
-            }
-        }
+        if (healthBarFill != null)
+            healthBarFill.fillAmount = (float)current / max;
     }
 
     /// <summary>
-    /// Show the game over screen with final score.
+    /// Show the game-over screen with the final score.
     /// </summary>
-    public void ShowGameOver(int finalScore, int highScore)
+    public void ShowGameOver(int finalScore)
     {
         if (gameOverPanel != null)
-        {
             gameOverPanel.SetActive(true);
-        }
 
-        if (gameOverScoreText != null)
-        {
-            gameOverScoreText.text = $"Final Score: {finalScore}";
-        }
+        if (finalScoreText != null)
+            finalScoreText.text = "FINAL SCORE: " + finalScore.ToString();
 
-        if (highScoreText != null)
-        {
-            highScoreText.text = $"High Score: {highScore}";
-        }
-    }
-
-    /// <summary>
-    /// Hide the game over screen.
-    /// </summary>
-    public void HideGameOver()
-    {
-        if (gameOverPanel != null)
-        {
-            gameOverPanel.SetActive(false);
-        }
-    }
-
-    /// <summary>
-    /// Show the pause menu.
-    /// </summary>
-    public void ShowPauseMenu()
-    {
-        if (pauseMenuPanel != null)
-        {
-            pauseMenuPanel.SetActive(true);
-        }
-    }
-
-    /// <summary>
-    /// Hide the pause menu.
-    /// </summary>
-    public void HidePauseMenu()
-    {
-        if (pauseMenuPanel != null)
-        {
-            pauseMenuPanel.SetActive(false);
-        }
-    }
-
-    // Button callback methods (can be assigned in Unity Inspector)
-    
-    public void OnRestartButtonClicked()
-    {
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.RestartGame();
-        }
-    }
-
-    public void OnResumeButtonClicked()
-    {
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.TogglePause();
-        }
-    }
-
-    public void OnQuitButtonClicked()
-    {
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.QuitGame();
-        }
-    }
-
-    private void OnDestroy()
-    {
-        if (Instance == this)
-        {
-            Instance = null;
-        }
+        if (restartText != null)
+            restartText.text = "Press R to Restart";
     }
 }
