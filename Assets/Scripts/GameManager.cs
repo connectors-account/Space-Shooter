@@ -1,162 +1,152 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-/// <summary>
-/// Manages overall game state, score, and game flow.
-/// </summary>
 public class GameManager : MonoBehaviour
 {
     public static GameManager Instance { get; private set; }
 
-    [Header("Game Settings")]
-    [SerializeField] private int startingScore = 0;
+    [Header("References")]
+    [SerializeField] private PlayerController player;
+    [SerializeField] private ScoreManager scoreManager;
+    [SerializeField] private WaveManager waveManager;
+    [SerializeField] private GameOverScreen gameOverScreen;
+    [SerializeField] private PauseMenu pauseMenu;
 
-    private int currentScore;
-    private bool isGameOver = false;
-    private bool isPaused = false;
+    [Header("Pools")]
+    [SerializeField] private ObjectPool playerBulletPool;
+    [SerializeField] private ObjectPool enemyBulletPool;
+    [SerializeField] private ObjectPool basicEnemyPool;
+    [SerializeField] private ObjectPool fastEnemyPool;
+    [SerializeField] private ObjectPool tankEnemyPool;
+    [SerializeField] private ObjectPool powerUpPool;
 
-    public int CurrentScore => currentScore;
-    public bool IsGameOver => isGameOver;
-    public bool IsPaused => isPaused;
+    [Header("Effects")]
+    [SerializeField] private ParticleSystem explosionPrefab;
+
+    public bool IsGameOver { get; private set; }
+    public bool IsPaused => Time.timeScale <= 0.001f;
+
+    private const string HighScoreKey = "HIGH_SCORE";
+
+    public int HighScore => PlayerPrefs.GetInt(HighScoreKey, 0);
+    public ScoreManager ScoreManager => scoreManager;
+    public WaveManager WaveManager => waveManager;
+    public PlayerController Player => player;
 
     private void Awake()
     {
-        // Singleton pattern
-        if (Instance == null)
-        {
-            Instance = this;
-        }
-        else
+        if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
             return;
         }
-    }
 
-    private void Start()
-    {
-        StartGame();
+        Instance = this;
+        Time.timeScale = 1f;
     }
 
     private void Update()
     {
-        HandlePauseInput();
-        HandleRestartInput();
-    }
-
-    private void HandlePauseInput()
-    {
-        if (Input.GetKeyDown(KeyCode.Escape) && !isGameOver)
+        if (Input.GetKeyDown(KeyCode.Escape) && !IsGameOver)
         {
             TogglePause();
         }
     }
 
-    private void HandleRestartInput()
+    public ObjectPool GetEnemyPool(EnemyType enemyType)
     {
-        if (isGameOver && Input.GetKeyDown(KeyCode.R))
+        return enemyType switch
         {
-            RestartGame();
-        }
+            EnemyType.Basic => basicEnemyPool,
+            EnemyType.Fast => fastEnemyPool,
+            EnemyType.Tank => tankEnemyPool,
+            _ => basicEnemyPool
+        };
     }
 
-    public void StartGame()
+    public ObjectPool GetPlayerBulletPool() => playerBulletPool;
+    public ObjectPool GetEnemyBulletPool() => enemyBulletPool;
+    public ObjectPool GetPowerUpPool() => powerUpPool;
+
+    public void SpawnExplosion(Vector3 position)
     {
-        currentScore = startingScore;
-        isGameOver = false;
-        isPaused = false;
-        Time.timeScale = 1f;
-
-        UpdateScoreUI();
-
-        if (UIManager.Instance != null)
+        if (AudioManager.Instance != null)
         {
-            UIManager.Instance.HideGameOver();
-            UIManager.Instance.HidePauseMenu();
+            AudioManager.Instance.PlaySfx(AudioCue.Explosion);
         }
-    }
 
-    public void AddScore(int points)
-    {
-        if (isGameOver)
+        if (explosionPrefab == null)
+        {
             return;
-
-        currentScore += points;
-        UpdateScoreUI();
-    }
-
-    private void UpdateScoreUI()
-    {
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.UpdateScore(currentScore);
         }
+
+        ParticleSystem explosion = Instantiate(explosionPrefab, position, Quaternion.identity);
+        explosion.Play();
+        Destroy(explosion.gameObject, explosion.main.duration + explosion.main.startLifetime.constantMax + 0.1f);
     }
 
-    public void GameOver()
+    public void OnPlayerDied()
     {
-        if (isGameOver)
+        if (IsGameOver)
+        {
             return;
+        }
 
-        isGameOver = true;
+        IsGameOver = true;
         Time.timeScale = 0f;
 
-        // Save high score
-        int highScore = PlayerPrefs.GetInt("HighScore", 0);
-        if (currentScore > highScore)
+        int score = scoreManager != null ? scoreManager.Score : 0;
+        if (score > HighScore)
         {
-            PlayerPrefs.SetInt("HighScore", currentScore);
+            PlayerPrefs.SetInt(HighScoreKey, score);
             PlayerPrefs.Save();
         }
 
-        if (UIManager.Instance != null)
+        if (gameOverScreen != null)
         {
-            UIManager.Instance.ShowGameOver(currentScore, PlayerPrefs.GetInt("HighScore", 0));
+            gameOverScreen.Show(score, HighScore);
         }
 
-        Debug.Log($"Game Over! Final Score: {currentScore}");
+        if (AudioManager.Instance != null)
+        {
+            AudioManager.Instance.PlaySfx(AudioCue.GameOver);
+        }
+    }
+
+    public void TogglePause()
+    {
+        bool shouldPause = !IsPaused;
+        Time.timeScale = shouldPause ? 0f : 1f;
+
+        if (pauseMenu != null)
+        {
+            pauseMenu.SetVisible(shouldPause);
+        }
+    }
+
+    public void ResumeGame()
+    {
+        Time.timeScale = 1f;
+        if (pauseMenu != null)
+        {
+            pauseMenu.SetVisible(false);
+        }
     }
 
     public void RestartGame()
     {
         Time.timeScale = 1f;
-        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+        SceneManager.LoadScene(SceneManager.GetActiveScene().name);
     }
 
-    public void TogglePause()
+    public void LoadMainMenu()
     {
-        isPaused = !isPaused;
-        Time.timeScale = isPaused ? 0f : 1f;
-
-        if (UIManager.Instance != null)
-        {
-            if (isPaused)
-            {
-                UIManager.Instance.ShowPauseMenu();
-            }
-            else
-            {
-                UIManager.Instance.HidePauseMenu();
-            }
-        }
+        Time.timeScale = 1f;
+        SceneManager.LoadScene("MainMenu");
     }
 
     public void QuitGame()
     {
-        Debug.Log("Quitting game...");
-        
-        #if UNITY_EDITOR
-            UnityEditor.EditorApplication.isPlaying = false;
-        #else
-            Application.Quit();
-        #endif
-    }
-
-    private void OnDestroy()
-    {
-        if (Instance == this)
-        {
-            Instance = null;
-        }
+        Application.Quit();
     }
 }
