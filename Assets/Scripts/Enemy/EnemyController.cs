@@ -1,4 +1,5 @@
 using UnityEngine;
+using SpaceShooter.Effects;
 
 namespace SpaceShooter.Enemy
 {
@@ -236,7 +237,7 @@ namespace SpaceShooter.Enemy
             // Try to drop a power-up
             TryDropPowerUp();
 
-            // Play explosion sound
+            ExplosionParticles.Spawn(transform.position);
             Managers.AudioManager.Instance?.PlayExplosionSound();
 
             // Destroy the enemy
