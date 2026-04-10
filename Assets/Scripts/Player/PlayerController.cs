@@ -1,4 +1,6 @@
 using UnityEngine;
+using SpaceShooter.InputSystem;
+using SpaceShooter.Effects;
 
 namespace SpaceShooter.Player
 {
@@ -97,12 +99,19 @@ namespace SpaceShooter.Player
         // ========== MOVEMENT ==========
         private void HandleMovement()
         {
-            float horizontal = Input.GetAxisRaw("Horizontal");
-            float vertical = Input.GetAxisRaw("Vertical");
+            Vector2 moveInput;
+            if (InputHandler.Instance != null)
+            {
+                moveInput = InputHandler.Instance.MoveInput;
+            }
+            else
+            {
+                moveInput = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical")).normalized;
+            }
 
-            Vector2 targetVelocity = new Vector2(horizontal, vertical).normalized * moveSpeed;
-            Vector2 currentVel = velocity;
-            velocity = Vector2.SmoothDamp(velocity, targetVelocity, ref currentVel, smoothTime);
+            Vector2 targetVelocity = moveInput * moveSpeed;
+            float smoothing = 1f - Mathf.Exp(-12f * Time.deltaTime);
+            velocity = Vector2.Lerp(velocity, targetVelocity, smoothing);
 
             Vector3 newPosition = transform.position + (Vector3)velocity * Time.deltaTime;
 
@@ -116,7 +125,8 @@ namespace SpaceShooter.Player
         // ========== SHOOTING ==========
         private void HandleShooting()
         {
-            if (Input.GetKey(KeyCode.Space) && Time.time >= nextFireTime)
+            bool fireHeld = InputHandler.Instance != null ? InputHandler.Instance.IsFireHeld : Input.GetKey(KeyCode.Space);
+            if (fireHeld && Time.time >= nextFireTime)
             {
                 FireBullet();
                 nextFireTime = Time.time + currentFireRate;
@@ -175,6 +185,7 @@ namespace SpaceShooter.Player
             isDead = true;
             OnPlayerDeath?.Invoke();
 
+            ExplosionParticles.Spawn(transform.position);
             Managers.AudioManager.Instance?.PlayExplosionSound();
 
             // Disable the sprite but keep the object alive for game-over logic

@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using SpaceShooter.InputSystem;
 
 namespace SpaceShooter.Managers
 {
@@ -195,13 +196,13 @@ namespace SpaceShooter.Managers
 
         private void Update()
         {
-            // Pause toggle with Escape key
-            if (Input.GetKeyDown(KeyCode.Escape))
+            bool pausePressed = InputHandler.Instance != null
+                ? InputHandler.Instance.PausePressedThisFrame
+                : Input.GetKeyDown(KeyCode.Escape);
+
+            if (pausePressed && (currentState == GameState.Playing || currentState == GameState.Paused))
             {
-                if (currentState == GameState.Playing || currentState == GameState.Paused)
-                {
-                    TogglePause();
-                }
+                TogglePause();
             }
         }
 
