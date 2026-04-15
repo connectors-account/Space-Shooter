@@ -2,161 +2,96 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Manages overall game state, score, and game flow.
+/// Central manager for score, game state, and scene-level flow.
 /// </summary>
 public class GameManager : MonoBehaviour
 {
     public static GameManager Instance { get; private set; }
 
-    [Header("Game Settings")]
-    [SerializeField] private int startingScore = 0;
+    [Header("Game State")]
+    [SerializeField] private bool gameOver;
+    [SerializeField] private int score;
 
-    private int currentScore;
-    private bool isGameOver = false;
-    private bool isPaused = false;
+    private UIManager uiManager;
 
-    public int CurrentScore => currentScore;
-    public bool IsGameOver => isGameOver;
-    public bool IsPaused => isPaused;
+    public bool IsGameOver => gameOver;
+    public int Score => score;
 
     private void Awake()
     {
-        // Singleton pattern
-        if (Instance == null)
-        {
-            Instance = this;
-        }
-        else
+        if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
             return;
         }
+
+        Instance = this;
     }
 
     private void Start()
     {
-        StartGame();
+        uiManager = FindObjectOfType<UIManager>();
+
+        score = 0;
+        gameOver = false;
+
+        if (uiManager != null)
+        {
+            uiManager.UpdateScore(score);
+            uiManager.HideGameOver();
+        }
     }
 
     private void Update()
     {
-        HandlePauseInput();
-        HandleRestartInput();
-    }
-
-    private void HandlePauseInput()
-    {
-        if (Input.GetKeyDown(KeyCode.Escape) && !isGameOver)
-        {
-            TogglePause();
-        }
-    }
-
-    private void HandleRestartInput()
-    {
-        if (isGameOver && Input.GetKeyDown(KeyCode.R))
+        // Keyboard restart shortcut after game over.
+        if (gameOver && Input.GetKeyDown(KeyCode.R))
         {
             RestartGame();
         }
     }
 
-    public void StartGame()
+    public void AddScore(int value)
     {
-        currentScore = startingScore;
-        isGameOver = false;
-        isPaused = false;
-        Time.timeScale = 1f;
-
-        UpdateScoreUI();
-
-        if (UIManager.Instance != null)
+        if (gameOver)
         {
-            UIManager.Instance.HideGameOver();
-            UIManager.Instance.HidePauseMenu();
-        }
-    }
-
-    public void AddScore(int points)
-    {
-        if (isGameOver)
             return;
+        }
 
-        currentScore += points;
-        UpdateScoreUI();
-    }
-
-    private void UpdateScoreUI()
-    {
-        if (UIManager.Instance != null)
+        score += Mathf.Max(0, value);
+        if (uiManager != null)
         {
-            UIManager.Instance.UpdateScore(currentScore);
+            uiManager.UpdateScore(score);
         }
     }
 
-    public void GameOver()
+    public void PlayerDied()
     {
-        if (isGameOver)
+        if (gameOver)
+        {
             return;
-
-        isGameOver = true;
-        Time.timeScale = 0f;
-
-        // Save high score
-        int highScore = PlayerPrefs.GetInt("HighScore", 0);
-        if (currentScore > highScore)
-        {
-            PlayerPrefs.SetInt("HighScore", currentScore);
-            PlayerPrefs.Save();
         }
 
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.ShowGameOver(currentScore, PlayerPrefs.GetInt("HighScore", 0));
-        }
+        gameOver = true;
 
-        Debug.Log($"Game Over! Final Score: {currentScore}");
+        if (uiManager != null)
+        {
+            uiManager.ShowGameOver();
+        }
     }
 
     public void RestartGame()
     {
-        Time.timeScale = 1f;
-        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+        SceneManager.LoadScene(SceneManager.GetActiveScene().name);
     }
 
-    public void TogglePause()
+    public void LoadMainMenu()
     {
-        isPaused = !isPaused;
-        Time.timeScale = isPaused ? 0f : 1f;
-
-        if (UIManager.Instance != null)
-        {
-            if (isPaused)
-            {
-                UIManager.Instance.ShowPauseMenu();
-            }
-            else
-            {
-                UIManager.Instance.HidePauseMenu();
-            }
-        }
+        SceneManager.LoadScene("MainMenu");
     }
 
     public void QuitGame()
     {
-        Debug.Log("Quitting game...");
-        
-        #if UNITY_EDITOR
-            UnityEditor.EditorApplication.isPlaying = false;
-        #else
-            Application.Quit();
-        #endif
-    }
-
-    private void OnDestroy()
-    {
-        if (Instance == this)
-        {
-            Instance = null;
-        }
+        Application.Quit();
     }
 }
