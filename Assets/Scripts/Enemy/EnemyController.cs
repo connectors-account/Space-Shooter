@@ -1,222 +1,199 @@
+using System.Collections;
 using UnityEngine;
 
 namespace SpaceShooter.Enemy
 {
     /// <summary>
-    /// Enemy types: Basic (moves straight down), Zigzag (weaves left/right), Tank (slow but tough).
-    /// Handles AI movement, shooting, health, and drops.
+    /// Enemy AI with three ship behaviors and projectile patterns.
     /// </summary>
     public class EnemyController : MonoBehaviour
     {
-        // ---- Enemy Type Enum ----
         public enum EnemyType
         {
-            Basic,   // Moves straight down, occasional shots
-            Zigzag,  // Weaves side to side, faster shots
-            Tank     // Slow, high HP, burst fire
+            Basic,
+            Zigzag,
+            Tank
         }
 
-        [Header("Enemy Configuration")]
+        [Header("Type")]
         [SerializeField] private EnemyType enemyType = EnemyType.Basic;
+
+        [Header("Stats")]
         [SerializeField] private int maxHealth = 30;
         [SerializeField] private float moveSpeed = 3f;
-        [SerializeField] private int scoreValue = 100;
         [SerializeField] private int contactDamage = 20;
+        [SerializeField] private int scoreValue = 100;
 
         [Header("Shooting")]
         [SerializeField] private GameObject bulletPrefab;
         [SerializeField] private Transform firePoint;
-        [SerializeField] private float fireRate = 1.5f;
-        [SerializeField] private float bulletSpeed = 6f;
+        [SerializeField] private float bulletSpeed = 7f;
+        [SerializeField] private float fireInterval = 1.4f;
 
-        [Header("Zigzag Settings")]
-        [SerializeField] private float zigzagAmplitude = 3f;
-        [SerializeField] private float zigzagFrequency = 2f;
+        [Header("Zigzag Movement")]
+        [SerializeField] private float zigzagAmplitude = 2.2f;
+        [SerializeField] private float zigzagFrequency = 3.2f;
 
-        [Header("Tank Settings")]
+        [Header("Tank Pattern")]
         [SerializeField] private int burstCount = 3;
-        [SerializeField] private float burstInterval = 0.15f;
+        [SerializeField] private float burstStepDelay = 0.1f;
+        [SerializeField] private float spreadAngle = 20f;
 
-        [Header("Power-Up Drop")]
-        [SerializeField] private GameObject[] powerUpPrefabs;  // Assign in inspector
-        [SerializeField] [Range(0f, 1f)] private float dropChance = 0.15f;
+        [Header("Drops")]
+        [SerializeField] private GameObject[] powerUpPrefabs;
+        [SerializeField, Range(0f, 1f)] private float powerUpDropChance = 0.18f;
 
-        // ---- Runtime State ----
+        [Header("VFX")]
+        [SerializeField] private GameObject explosionPrefab;
+
         private int currentHealth;
         private float nextFireTime;
-        private float spawnX;  // used for zigzag calculation
-        private float aliveTime;
+        private float lifetime;
+        private float spawnX;
         private bool isDead;
 
-        // ---- Events ----
-        public event System.Action<int> OnEnemyDestroyed;  // passes scoreValue
-
-        // ---- Public Properties ----
-        public EnemyType Type => enemyType;
-        public int ScoreValue => scoreValue;
+        public event System.Action<int> OnEnemyDestroyed;
 
         private void Start()
         {
-            currentHealth = maxHealth;
-            spawnX = transform.position.x;
-            aliveTime = 0f;
-            isDead = false;
-
-            // Randomize first shot timing
-            nextFireTime = Time.time + Random.Range(0.5f, fireRate);
-
-            // Apply type-specific defaults
             ApplyTypeDefaults();
+            currentHealth = maxHealth;
+            nextFireTime = Time.time + Random.Range(0.2f, fireInterval);
+            spawnX = transform.position.x;
         }
 
-        /// <summary>
-        /// Sets baseline stats per enemy type if not overridden in Inspector.
-        /// </summary>
+        private void Update()
+        {
+            if (isDead || GameIsNotRunning())
+            {
+                return;
+            }
+
+            lifetime += Time.deltaTime;
+            HandleMovement();
+            HandleShooting();
+
+            if (transform.position.y < -7.2f)
+            {
+                Destroy(gameObject);
+            }
+        }
+
+        private bool GameIsNotRunning()
+        {
+            return Managers.GameManager.Instance != null && Managers.GameManager.Instance.CurrentState != Managers.GameManager.GameState.Playing;
+        }
+
         private void ApplyTypeDefaults()
         {
             switch (enemyType)
             {
                 case EnemyType.Basic:
-                    if (maxHealth == 30) maxHealth = 30;
-                    if (moveSpeed == 3f) moveSpeed = 3f;
-                    if (scoreValue == 100) scoreValue = 100;
+                    maxHealth = Mathf.Max(maxHealth, 25);
+                    scoreValue = Mathf.Max(scoreValue, 100);
                     break;
 
                 case EnemyType.Zigzag:
-                    if (maxHealth == 30) maxHealth = 20;
-                    if (moveSpeed == 3f) moveSpeed = 4f;
-                    if (scoreValue == 100) scoreValue = 150;
-                    fireRate = 1f;
+                    maxHealth = Mathf.Max(15, maxHealth - 10);
+                    moveSpeed = Mathf.Max(3.8f, moveSpeed);
+                    fireInterval = Mathf.Min(fireInterval, 1.1f);
+                    scoreValue = Mathf.Max(scoreValue, 150);
                     break;
 
                 case EnemyType.Tank:
-                    if (maxHealth == 30) maxHealth = 80;
-                    if (moveSpeed == 3f) moveSpeed = 1.5f;
-                    if (scoreValue == 100) scoreValue = 300;
-                    fireRate = 2.5f;
+                    maxHealth = Mathf.Max(80, maxHealth);
+                    moveSpeed = Mathf.Min(moveSpeed, 1.8f);
+                    fireInterval = Mathf.Max(fireInterval, 2.1f);
+                    scoreValue = Mathf.Max(scoreValue, 280);
                     break;
             }
-            currentHealth = maxHealth;
         }
 
-        private void Update()
-        {
-            if (isDead) return;
-
-            aliveTime += Time.deltaTime;
-
-            HandleMovement();
-            HandleShooting();
-            CheckOutOfBounds();
-        }
-
-        // ========== MOVEMENT AI ==========
         private void HandleMovement()
         {
-            switch (enemyType)
+            if (enemyType == EnemyType.Basic)
             {
-                case EnemyType.Basic:
-                    // Straight downward movement
-                    transform.Translate(Vector3.down * moveSpeed * Time.deltaTime, Space.World);
-                    break;
+                transform.Translate(Vector3.down * moveSpeed * Time.deltaTime, Space.World);
+                return;
+            }
 
-                case EnemyType.Zigzag:
-                    // Sinusoidal horizontal movement + downward drift
-                    float newX = spawnX + Mathf.Sin(aliveTime * zigzagFrequency) * zigzagAmplitude;
-                    float newY = transform.position.y - moveSpeed * Time.deltaTime;
-                    transform.position = new Vector3(newX, newY, transform.position.z);
-                    break;
+            if (enemyType == EnemyType.Zigzag)
+            {
+                float x = spawnX + Mathf.Sin(lifetime * zigzagFrequency) * zigzagAmplitude;
+                float y = transform.position.y - moveSpeed * Time.deltaTime;
+                transform.position = new Vector3(x, y, transform.position.z);
+                return;
+            }
 
-                case EnemyType.Tank:
-                    // Slow downward movement, stops at a y position to act as turret
-                    if (transform.position.y > 2f)
-                    {
-                        transform.Translate(Vector3.down * moveSpeed * Time.deltaTime, Space.World);
-                    }
-                    break;
+            // Tank
+            if (transform.position.y > 1.8f)
+            {
+                transform.Translate(Vector3.down * moveSpeed * Time.deltaTime, Space.World);
             }
         }
 
-        // ========== SHOOTING AI ==========
         private void HandleShooting()
         {
-            if (Time.time < nextFireTime) return;
-            if (bulletPrefab == null || firePoint == null) return;
+            if (bulletPrefab == null || firePoint == null || Time.time < nextFireTime)
+            {
+                return;
+            }
 
             switch (enemyType)
             {
                 case EnemyType.Basic:
-                    FireSingleShot();
+                    FireBullet(Vector2.down);
                     break;
-
                 case EnemyType.Zigzag:
-                    FireAimedShot();
+                    FireAimedBullet();
                     break;
-
                 case EnemyType.Tank:
-                    StartCoroutine(FireBurst());
+                    StartCoroutine(FireTankBurst());
                     break;
             }
 
-            nextFireTime = Time.time + fireRate;
+            nextFireTime = Time.time + fireInterval;
         }
 
-        /// <summary>Fires a single bullet straight down.</summary>
-        private void FireSingleShot()
+        private void FireAimedBullet()
         {
-            GameObject bullet = Instantiate(bulletPrefab, firePoint.position, Quaternion.identity);
-            bullet.tag = "EnemyBullet";
-
-            Weapons.BulletController bc = bullet.GetComponent<Weapons.BulletController>();
-            if (bc != null)
-            {
-                bc.SetDirection(Vector2.down);
-                bc.SetSpeed(bulletSpeed);
-            }
+            Transform player = GameObject.FindGameObjectWithTag("Player")?.transform;
+            Vector2 direction = player == null ? Vector2.down : ((Vector2)player.position - (Vector2)firePoint.position).normalized;
+            FireBullet(direction);
         }
 
-        /// <summary>Fires a bullet aimed at the player's current position.</summary>
-        private void FireAimedShot()
-        {
-            GameObject playerObj = GameObject.FindGameObjectWithTag("Player");
-            Vector2 dir = Vector2.down;
-
-            if (playerObj != null)
-            {
-                dir = ((Vector2)playerObj.transform.position - (Vector2)firePoint.position).normalized;
-            }
-
-            GameObject bullet = Instantiate(bulletPrefab, firePoint.position, Quaternion.identity);
-            bullet.tag = "EnemyBullet";
-
-            Weapons.BulletController bc = bullet.GetComponent<Weapons.BulletController>();
-            if (bc != null)
-            {
-                bc.SetDirection(dir);
-                bc.SetSpeed(bulletSpeed);
-            }
-        }
-
-        /// <summary>Fires a burst of bullets (Tank specialty).</summary>
-        private System.Collections.IEnumerator FireBurst()
+        private IEnumerator FireTankBurst()
         {
             for (int i = 0; i < burstCount; i++)
             {
-                FireSingleShot();
-                yield return new WaitForSeconds(burstInterval);
+                float t = burstCount <= 1 ? 0.5f : i / (float)(burstCount - 1);
+                float angle = Mathf.Lerp(-spreadAngle, spreadAngle, t);
+                Vector2 direction = Quaternion.Euler(0f, 0f, angle) * Vector2.down;
+                FireBullet(direction.normalized);
+                yield return new WaitForSeconds(burstStepDelay);
             }
         }
 
-        // ========== HEALTH & DAMAGE ==========
+        private void FireBullet(Vector2 direction)
+        {
+            GameObject bullet = Instantiate(bulletPrefab, firePoint.position, Quaternion.identity);
+            bullet.tag = "EnemyBullet";
+
+            Weapons.BulletController bulletController = bullet.GetComponent<Weapons.BulletController>();
+            if (bulletController != null)
+            {
+                bulletController.Configure(direction, bulletSpeed, 12, false);
+            }
+        }
+
         public void TakeDamage(int damage)
         {
-            if (isDead) return;
+            if (isDead)
+            {
+                return;
+            }
 
             currentHealth -= damage;
-
-            // Flash white briefly
-            StartCoroutine(DamageFlash());
-
             if (currentHealth <= 0)
             {
                 Die();
@@ -225,86 +202,73 @@ namespace SpaceShooter.Enemy
 
         private void Die()
         {
+            if (isDead)
+            {
+                return;
+            }
+
             isDead = true;
-
-            // Notify GameManager of score
-            OnEnemyDestroyed?.Invoke(scoreValue);
-
-            // Also notify via GameManager singleton
-            Managers.GameManager.Instance?.AddScore(scoreValue);
-
-            // Try to drop a power-up
+            SpawnExplosion();
             TryDropPowerUp();
-
-            // Play explosion sound
             Managers.AudioManager.Instance?.PlayExplosionSound();
-
-            // Destroy the enemy
+            OnEnemyDestroyed?.Invoke(scoreValue);
             Destroy(gameObject);
+        }
+
+        private void SpawnExplosion()
+        {
+            if (explosionPrefab != null)
+            {
+                Instantiate(explosionPrefab, transform.position, Quaternion.identity);
+            }
+            else
+            {
+                GameObject explosion = new GameObject("Explosion");
+                explosion.transform.position = transform.position;
+                explosion.AddComponent<SpaceShooter.Utils.ExplosionEffect>();
+            }
         }
 
         private void TryDropPowerUp()
         {
-            if (powerUpPrefabs == null || powerUpPrefabs.Length == 0) return;
-
-            if (Random.value <= dropChance)
+            if (powerUpPrefabs == null || powerUpPrefabs.Length == 0 || Random.value > powerUpDropChance)
             {
-                int index = Random.Range(0, powerUpPrefabs.Length);
-                if (powerUpPrefabs[index] != null)
-                {
-                    Instantiate(powerUpPrefabs[index], transform.position, Quaternion.identity);
-                }
+                return;
+            }
+
+            int randomIndex = Random.Range(0, powerUpPrefabs.Length);
+            if (powerUpPrefabs[randomIndex] != null)
+            {
+                Instantiate(powerUpPrefabs[randomIndex], transform.position, Quaternion.identity);
             }
         }
 
-        private System.Collections.IEnumerator DamageFlash()
-        {
-            SpriteRenderer sr = GetComponent<SpriteRenderer>();
-            if (sr == null) yield break;
-
-            Color original = sr.color;
-            sr.color = Color.white;
-            yield return new WaitForSeconds(0.08f);
-            sr.color = original;
-        }
-
-        // ========== BOUNDS CHECK ==========
-        private void CheckOutOfBounds()
-        {
-            // Destroy if fallen below the screen
-            if (transform.position.y < -7f)
-            {
-                Destroy(gameObject);
-            }
-        }
-
-        // ========== COLLISION ==========
         private void OnTriggerEnter2D(Collider2D other)
         {
-            if (isDead) return;
+            if (isDead)
+            {
+                return;
+            }
 
             if (other.CompareTag("PlayerBullet"))
             {
                 Weapons.BulletController bullet = other.GetComponent<Weapons.BulletController>();
-                if (bullet != null)
-                {
-                    TakeDamage(bullet.Damage);
-                }
+                int damage = bullet != null ? bullet.Damage : 10;
+                TakeDamage(damage);
                 Destroy(other.gameObject);
+                return;
             }
-        }
 
-        /// <summary>
-        /// Configure this enemy externally (used by SpawnManager).
-        /// </summary>
-        public void Configure(EnemyType type, int health, float speed, int score, float shootRate)
-        {
-            enemyType = type;
-            maxHealth = health;
-            currentHealth = health;
-            moveSpeed = speed;
-            scoreValue = score;
-            fireRate = shootRate;
+            if (other.CompareTag("Player"))
+            {
+                SpaceShooter.Player.PlayerController player = other.GetComponent<SpaceShooter.Player.PlayerController>();
+                if (player != null)
+                {
+                    player.TakeDamage(contactDamage);
+                }
+
+                Die();
+            }
         }
     }
 }
