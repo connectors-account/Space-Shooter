@@ -3,54 +3,71 @@ using UnityEngine;
 namespace SpaceShooter.Weapons
 {
     /// <summary>
-    /// Controls bullet movement and lifetime.
-    /// Used for both player and enemy bullets.
+    /// Generic projectile logic for player and enemy bullets.
     /// </summary>
     public class BulletController : MonoBehaviour
     {
-        [Header("Bullet Settings")]
         [SerializeField] private float speed = 12f;
         [SerializeField] private int damage = 10;
-        [SerializeField] private float lifetime = 5f;
+        [SerializeField] private float lifetime = 4f;
         [SerializeField] private Vector2 direction = Vector2.up;
 
-        /// <summary>How much damage this bullet deals on hit.</summary>
+        private bool initialized;
+        private bool firedByPlayer = true;
+
         public int Damage => damage;
-
-        /// <summary>Set bullet direction (normalized).</summary>
-        public void SetDirection(Vector2 dir)
-        {
-            direction = dir.normalized;
-        }
-
-        /// <summary>Set bullet speed.</summary>
-        public void SetSpeed(float newSpeed)
-        {
-            speed = newSpeed;
-        }
-
-        /// <summary>Set bullet damage.</summary>
-        public void SetDamage(int newDamage)
-        {
-            damage = newDamage;
-        }
+        public bool FiredByPlayer => firedByPlayer;
 
         private void Start()
         {
-            // Auto-destroy after lifetime to prevent memory leaks
             Destroy(gameObject, lifetime);
+            if (!initialized)
+            {
+                direction = direction.normalized;
+                ApplyRotationFromDirection();
+            }
         }
 
         private void Update()
         {
-            // Move bullet in its direction
-            transform.Translate(direction * speed * Time.deltaTime, Space.World);
+            transform.position += (Vector3)(direction * speed * Time.deltaTime);
 
-            // Destroy if out of screen bounds (extra safety)
-            if (Mathf.Abs(transform.position.x) > 12f || Mathf.Abs(transform.position.y) > 8f)
+            if (Mathf.Abs(transform.position.x) > 15f || Mathf.Abs(transform.position.y) > 10f)
             {
                 Destroy(gameObject);
             }
+        }
+
+        public void Configure(Vector2 moveDirection, float moveSpeed, int bulletDamage, bool fromPlayer)
+        {
+            direction = moveDirection.sqrMagnitude < 0.0001f ? Vector2.up : moveDirection.normalized;
+            speed = Mathf.Max(0.1f, moveSpeed);
+            damage = Mathf.Max(1, bulletDamage);
+            firedByPlayer = fromPlayer;
+            initialized = true;
+            ApplyRotationFromDirection();
+        }
+
+        public void SetDirection(Vector2 moveDirection)
+        {
+            direction = moveDirection.sqrMagnitude < 0.0001f ? Vector2.up : moveDirection.normalized;
+            ApplyRotationFromDirection();
+        }
+
+        public void SetSpeed(float moveSpeed)
+        {
+            speed = Mathf.Max(0.1f, moveSpeed);
+        }
+
+        public void SetDamage(int bulletDamage)
+        {
+            damage = Mathf.Max(1, bulletDamage);
+        }
+
+        private void ApplyRotationFromDirection()
+        {
+            float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg - 90f;
+            transform.rotation = Quaternion.Euler(0f, 0f, angle);
         }
     }
 }

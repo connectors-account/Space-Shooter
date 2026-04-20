@@ -3,84 +3,82 @@ using UnityEngine;
 namespace SpaceShooter.PowerUps
 {
     /// <summary>
-    /// Power-up types: HealthPack, RapidFire, Shield.
-    /// Drifts downward and applies effect on player contact.
+    /// Falling collectible that applies a temporary or instant effect.
     /// </summary>
     public class PowerUpController : MonoBehaviour
     {
         public enum PowerUpType
         {
-            HealthPack,
-            RapidFire,
+            HealthRestore,
+            WeaponUpgrade,
             Shield
         }
 
-        [Header("Power-Up Settings")]
-        [SerializeField] private PowerUpType powerUpType = PowerUpType.HealthPack;
+        [Header("Type")]
+        [SerializeField] private PowerUpType powerUpType = PowerUpType.HealthRestore;
+
+        [Header("Movement")]
         [SerializeField] private float driftSpeed = 2f;
-        [SerializeField] private float lifetime = 10f;
-        [SerializeField] private int healAmount = 30;
+        [SerializeField] private float bobAmplitude = 0.2f;
+        [SerializeField] private float bobFrequency = 3f;
+        [SerializeField] private float lifetime = 12f;
+
+        [Header("Effect Values")]
+        [SerializeField] private int healthRestoreAmount = 30;
 
         [Header("Visual")]
-        [SerializeField] private float bobAmplitude = 0.3f;
-        [SerializeField] private float bobFrequency = 2f;
+        [SerializeField] private float pulseScaleAmount = 0.08f;
 
         private float spawnTime;
-        private float startY;
+        private Vector3 initialScale;
 
         private void Start()
         {
+            gameObject.tag = "PowerUp";
             spawnTime = Time.time;
-            startY = transform.position.y;
-            tag = "PowerUp";
-
-            // Auto-destroy after lifetime
+            initialScale = transform.localScale;
             Destroy(gameObject, lifetime);
         }
 
         private void Update()
         {
-            // Drift downward with a gentle bobbing motion
             float elapsed = Time.time - spawnTime;
             float bobOffset = Mathf.Sin(elapsed * bobFrequency) * bobAmplitude;
 
-            transform.position += Vector3.down * driftSpeed * Time.deltaTime;
+            Vector3 position = transform.position;
+            position.y -= driftSpeed * Time.deltaTime;
+            position.x += bobOffset * Time.deltaTime;
+            transform.position = position;
 
-            // Apply bob on local scale (visual wobble)
-            float scale = 1f + Mathf.Sin(elapsed * bobFrequency * 2f) * 0.05f;
-            transform.localScale = new Vector3(scale, scale, 1f);
+            float pulse = 1f + Mathf.Sin(elapsed * bobFrequency * 1.6f) * pulseScaleAmount;
+            transform.localScale = initialScale * pulse;
 
-            // Destroy if out of bounds
-            if (transform.position.y < -7f)
+            if (transform.position.y < -7.5f)
             {
                 Destroy(gameObject);
             }
         }
 
-        /// <summary>
-        /// Applies this power-up's effect to the player.
-        /// Called by PlayerController on trigger collision.
-        /// </summary>
         public void ApplyEffect(Player.PlayerController player)
         {
-            if (player == null) return;
+            if (player == null)
+            {
+                return;
+            }
 
             switch (powerUpType)
             {
-                case PowerUpType.HealthPack:
-                    player.Heal(healAmount);
+                case PowerUpType.HealthRestore:
+                    player.Heal(healthRestoreAmount);
                     break;
-
-                case PowerUpType.RapidFire:
+                case PowerUpType.WeaponUpgrade:
                     player.ActivateRapidFire();
                     break;
-
                 case PowerUpType.Shield:
                     player.ActivateShield();
                     break;
             }
 
-            // Play power-up sound
             Managers.AudioManager.Instance?.PlayPowerUpSound();
         }
     }

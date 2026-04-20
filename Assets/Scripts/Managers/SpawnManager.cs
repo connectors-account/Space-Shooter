@@ -1,12 +1,11 @@
-using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace SpaceShooter.Managers
 {
     /// <summary>
-    /// Manages enemy spawning in waves with increasing difficulty.
-    /// Spawns enemies at random positions above the screen.
+    /// Spawns enemies by wave and tracks active spawned entities.
     /// </summary>
     public class SpawnManager : MonoBehaviour
     {
@@ -15,178 +14,143 @@ namespace SpaceShooter.Managers
         [SerializeField] private GameObject zigzagEnemyPrefab;
         [SerializeField] private GameObject tankEnemyPrefab;
 
-        [Header("Spawn Settings")]
-        [SerializeField] private float spawnYPosition = 6.5f;
-        [SerializeField] private float spawnXMin = -8f;
-        [SerializeField] private float spawnXMax = 8f;
-        [SerializeField] private float baseSpawnInterval = 1.5f;
-        [SerializeField] private float minSpawnInterval = 0.4f;
-        [SerializeField] private float spawnIntervalReduction = 0.1f; // per wave
+        [Header("Spawn Bounds")]
+        [SerializeField] private float spawnY = 6.5f;
+        [SerializeField] private float spawnXMin = -8.5f;
+        [SerializeField] private float spawnXMax = 8.5f;
 
-        // ---- Runtime State ----
+        [Header("Spawn Timing")]
+        [SerializeField] private float waveStartDelay = 1.0f;
+        [SerializeField] private float baseSpawnInterval = 1.3f;
+        [SerializeField] private float minSpawnInterval = 0.45f;
+        [SerializeField] private float spawnIntervalReductionPerWave = 0.08f;
+
+        private readonly List<GameObject> activeEnemies = new List<GameObject>();
+
         private int currentWave;
         private int enemiesToSpawn;
-        private int enemiesSpawned;
-        private bool isSpawning;
-        private Coroutine spawnCoroutine;
-
-        // ---- Active Enemies Tracking ----
-        private List<GameObject> activeEnemies = new List<GameObject>();
+        private int spawnedCount;
+        private Coroutine spawnRoutine;
 
         public int ActiveEnemyCount
         {
             get
             {
-                // Clean null references
-                activeEnemies.RemoveAll(e => e == null);
+                activeEnemies.RemoveAll(item => item == null);
                 return activeEnemies.Count;
             }
         }
 
-        /// <summary>
-        /// Begins spawning enemies for a new wave.
-        /// Called by GameManager.
-        /// </summary>
         public void StartWave(int wave, int totalEnemies)
         {
             currentWave = wave;
-            enemiesToSpawn = totalEnemies;
-            enemiesSpawned = 0;
-            isSpawning = true;
+            enemiesToSpawn = Mathf.Max(0, totalEnemies);
+            spawnedCount = 0;
 
-            if (spawnCoroutine != null)
-                StopCoroutine(spawnCoroutine);
+            if (spawnRoutine != null)
+            {
+                StopCoroutine(spawnRoutine);
+            }
 
-            spawnCoroutine = StartCoroutine(SpawnWaveRoutine());
+            spawnRoutine = StartCoroutine(SpawnWaveRoutine());
         }
 
-        /// <summary>Stops all spawning (e.g., on game over).</summary>
         public void StopSpawning()
         {
-            isSpawning = false;
-            if (spawnCoroutine != null)
+            if (spawnRoutine != null)
             {
-                StopCoroutine(spawnCoroutine);
-                spawnCoroutine = null;
+                StopCoroutine(spawnRoutine);
+                spawnRoutine = null;
             }
         }
 
-        /// <summary>Destroys all active enemies (e.g., on restart).</summary>
         public void ClearAllEnemies()
         {
             StopSpawning();
 
-            foreach (GameObject enemy in activeEnemies)
+            for (int i = 0; i < activeEnemies.Count; i++)
             {
-                if (enemy != null)
-                    Destroy(enemy);
+                if (activeEnemies[i] != null)
+                {
+                    Destroy(activeEnemies[i]);
+                }
             }
+
             activeEnemies.Clear();
-
-            // Also destroy any stray enemy bullets
-            GameObject[] enemyBullets = GameObject.FindGameObjectsWithTag("EnemyBullet");
-            foreach (GameObject bullet in enemyBullets)
-            {
-                Destroy(bullet);
-            }
-
-            // And player bullets
-            GameObject[] playerBullets = GameObject.FindGameObjectsWithTag("PlayerBullet");
-            foreach (GameObject bullet in playerBullets)
-            {
-                Destroy(bullet);
-            }
-
-            // And power-ups
-            GameObject[] powerUps = GameObject.FindGameObjectsWithTag("PowerUp");
-            foreach (GameObject pu in powerUps)
-            {
-                Destroy(pu);
-            }
+            DestroyTaggedObjects("EnemyBullet");
+            DestroyTaggedObjects("PlayerBullet");
+            DestroyTaggedObjects("PowerUp");
         }
 
-        /// <summary>
-        /// Main spawn coroutine. Spawns enemies with decreasing intervals.
-        /// </summary>
         private IEnumerator SpawnWaveRoutine()
         {
-            // Brief delay before wave starts
-            yield return new WaitForSeconds(1.5f);
+            yield return new WaitForSeconds(waveStartDelay);
 
-            float interval = Mathf.Max(
-                baseSpawnInterval - (currentWave - 1) * spawnIntervalReduction,
-                minSpawnInterval
-            );
-
-            while (enemiesSpawned < enemiesToSpawn && isSpawning)
+            float interval = Mathf.Max(minSpawnInterval, baseSpawnInterval - (currentWave - 1) * spawnIntervalReductionPerWave);
+            while (spawnedCount < enemiesToSpawn)
             {
-                SpawnEnemy();
-                enemiesSpawned++;
-
+                SpawnSingleEnemy();
+                spawnedCount++;
                 yield return new WaitForSeconds(interval);
             }
 
-            isSpawning = false;
+            spawnRoutine = null;
         }
 
-        /// <summary>
-        /// Spawns a single enemy based on wave-appropriate type distribution.
-        /// </summary>
-        private void SpawnEnemy()
+        private void SpawnSingleEnemy()
         {
-            // Determine enemy type based on wave and randomness
-            GameObject prefab = ChooseEnemyPrefab();
-            if (prefab == null) return;
+            GameObject prefab = PickEnemyPrefabForWave();
+            if (prefab == null)
+            {
+                return;
+            }
 
-            // Random x position
-            float spawnX = Random.Range(spawnXMin, spawnXMax);
-            Vector3 spawnPos = new Vector3(spawnX, spawnYPosition, 0f);
-
-            GameObject enemy = Instantiate(prefab, spawnPos, Quaternion.identity);
+            float x = Random.Range(spawnXMin, spawnXMax);
+            Vector3 spawnPosition = new Vector3(x, spawnY, 0f);
+            GameObject enemy = Instantiate(prefab, spawnPosition, Quaternion.identity);
             enemy.tag = "Enemy";
-
-            // Track active enemies
             activeEnemies.Add(enemy);
 
-            // Subscribe to enemy death for wave counting
-            Enemy.EnemyController ec = enemy.GetComponent<Enemy.EnemyController>();
-            if (ec != null)
+            Enemy.EnemyController enemyController = enemy.GetComponent<Enemy.EnemyController>();
+            if (enemyController != null)
             {
-                ec.OnEnemyDestroyed += (score) =>
+                enemyController.OnEnemyDestroyed += points =>
                 {
                     activeEnemies.Remove(enemy);
-                    GameManager.Instance?.OnEnemyKilled();
+                    GameManager.Instance?.HandleEnemyDestroyed(points);
+                    GameManager.Instance?.OnEnemyKilledInWave();
                 };
             }
         }
 
-        /// <summary>
-        /// Chooses which enemy prefab to spawn based on current wave.
-        /// Higher waves introduce tougher enemies.
-        /// </summary>
-        private GameObject ChooseEnemyPrefab()
+        private GameObject PickEnemyPrefabForWave()
         {
             float roll = Random.value;
 
             if (currentWave <= 2)
             {
-                // Waves 1-2: Mostly basic enemies
-                if (roll < 0.8f) return basicEnemyPrefab;
+                if (roll < 0.75f) return basicEnemyPrefab;
                 return zigzagEnemyPrefab != null ? zigzagEnemyPrefab : basicEnemyPrefab;
             }
-            else if (currentWave <= 4)
+
+            if (currentWave <= 5)
             {
-                // Waves 3-4: Mix of basic and zigzag, rare tanks
-                if (roll < 0.5f) return basicEnemyPrefab;
-                if (roll < 0.85f) return zigzagEnemyPrefab != null ? zigzagEnemyPrefab : basicEnemyPrefab;
+                if (roll < 0.45f) return basicEnemyPrefab;
+                if (roll < 0.82f) return zigzagEnemyPrefab != null ? zigzagEnemyPrefab : basicEnemyPrefab;
                 return tankEnemyPrefab != null ? tankEnemyPrefab : basicEnemyPrefab;
             }
-            else
+
+            if (roll < 0.30f) return basicEnemyPrefab;
+            if (roll < 0.65f) return zigzagEnemyPrefab != null ? zigzagEnemyPrefab : basicEnemyPrefab;
+            return tankEnemyPrefab != null ? tankEnemyPrefab : basicEnemyPrefab;
+        }
+
+        private static void DestroyTaggedObjects(string tagName)
+        {
+            GameObject[] objects = GameObject.FindGameObjectsWithTag(tagName);
+            for (int i = 0; i < objects.Length; i++)
             {
-                // Wave 5+: All types with more tanks
-                if (roll < 0.35f) return basicEnemyPrefab;
-                if (roll < 0.65f) return zigzagEnemyPrefab != null ? zigzagEnemyPrefab : basicEnemyPrefab;
-                return tankEnemyPrefab != null ? tankEnemyPrefab : basicEnemyPrefab;
+                Destroy(objects[i]);
             }
         }
     }
