@@ -1,157 +1,128 @@
-using UnityEngine;
 using System.Collections;
+using UnityEngine;
 
-/// <summary>
-/// Spawns enemy ships at random positions at the top of the screen.
-/// </summary>
-public class EnemySpawner : MonoBehaviour
+namespace SpaceShooter
 {
-    [Header("Spawn Settings")]
-    [SerializeField] private GameObject[] enemyPrefabs;
-    [SerializeField] private float initialSpawnRate = 2f;
-    [SerializeField] private float minimumSpawnRate = 0.5f;
-    [SerializeField] private float spawnRateDecrease = 0.1f;
-    [SerializeField] private float difficultyIncreaseInterval = 30f;
-
-    [Header("Spawn Area")]
-    [SerializeField] private float spawnY = 6f;
-    [SerializeField] private float spawnXMin = -7f;
-    [SerializeField] private float spawnXMax = 7f;
-
-    [Header("Enemy Configuration")]
-    [SerializeField] private float enemySpeedMin = 2f;
-    [SerializeField] private float enemySpeedMax = 4f;
-    [SerializeField] private bool enemiesCanShoot = true;
-
-    private float currentSpawnRate;
-    private float nextSpawnTime;
-    private float nextDifficultyIncrease;
-    private bool isSpawning = true;
-
-    private void Start()
-    {
-        currentSpawnRate = initialSpawnRate;
-        nextSpawnTime = Time.time + currentSpawnRate;
-        nextDifficultyIncrease = Time.time + difficultyIncreaseInterval;
-    }
-
-    private void Update()
-    {
-        if (GameManager.Instance != null && GameManager.Instance.IsGameOver)
-        {
-            isSpawning = false;
-            return;
-        }
-
-        if (!isSpawning)
-            return;
-
-        // Handle spawning
-        if (Time.time >= nextSpawnTime)
-        {
-            SpawnEnemy();
-            nextSpawnTime = Time.time + currentSpawnRate;
-        }
-
-        // Increase difficulty over time
-        if (Time.time >= nextDifficultyIncrease)
-        {
-            IncreaseDifficulty();
-            nextDifficultyIncrease = Time.time + difficultyIncreaseInterval;
-        }
-    }
-
-    private void SpawnEnemy()
-    {
-        if (enemyPrefabs == null || enemyPrefabs.Length == 0)
-        {
-            Debug.LogWarning("No enemy prefabs assigned to EnemySpawner!");
-            return;
-        }
-
-        // Select random enemy prefab
-        int randomIndex = Random.Range(0, enemyPrefabs.Length);
-        GameObject enemyPrefab = enemyPrefabs[randomIndex];
-
-        if (enemyPrefab == null)
-        {
-            Debug.LogWarning("Enemy prefab at index " + randomIndex + " is null!");
-            return;
-        }
-
-        // Calculate spawn position
-        float spawnX = Random.Range(spawnXMin, spawnXMax);
-        Vector3 spawnPosition = new Vector3(spawnX, spawnY, 0f);
-
-        // Instantiate enemy
-        GameObject enemy = Instantiate(enemyPrefab, spawnPosition, Quaternion.Euler(0f, 0f, 180f));
-
-        // Configure enemy properties
-        EnemyController enemyController = enemy.GetComponent<EnemyController>();
-        if (enemyController != null)
-        {
-            float randomSpeed = Random.Range(enemySpeedMin, enemySpeedMax);
-            enemyController.Configure(randomSpeed, 1, 100, enemiesCanShoot);
-        }
-    }
-
-    private void IncreaseDifficulty()
-    {
-        // Decrease spawn rate (spawn enemies more frequently)
-        currentSpawnRate = Mathf.Max(minimumSpawnRate, currentSpawnRate - spawnRateDecrease);
-        
-        // Increase enemy speed range
-        enemySpeedMin = Mathf.Min(enemySpeedMin + 0.2f, 5f);
-        enemySpeedMax = Mathf.Min(enemySpeedMax + 0.3f, 8f);
-
-        Debug.Log($"Difficulty increased! Spawn rate: {currentSpawnRate:F2}s, Speed: {enemySpeedMin:F1}-{enemySpeedMax:F1}");
-    }
-
     /// <summary>
-    /// Start or resume spawning.
+    /// Spawns enemies for each wave with increasing intensity.
     /// </summary>
-    public void StartSpawning()
+    public class EnemySpawner : MonoBehaviour
     {
-        isSpawning = true;
-    }
-
-    /// <summary>
-    /// Stop spawning enemies.
-    /// </summary>
-    public void StopSpawning()
-    {
-        isSpawning = false;
-    }
-
-    /// <summary>
-    /// Reset spawner to initial settings.
-    /// </summary>
-    public void ResetSpawner()
-    {
-        currentSpawnRate = initialSpawnRate;
-        enemySpeedMin = 2f;
-        enemySpeedMax = 4f;
-        isSpawning = true;
-        nextSpawnTime = Time.time + currentSpawnRate;
-        nextDifficultyIncrease = Time.time + difficultyIncreaseInterval;
-    }
-
-    /// <summary>
-    /// Destroy all existing enemies in the scene.
-    /// </summary>
-    public void ClearAllEnemies()
-    {
-        GameObject[] enemies = GameObject.FindGameObjectsWithTag("Enemy");
-        foreach (GameObject enemy in enemies)
+        [System.Serializable]
+        public class EnemySpawnEntry
         {
-            Destroy(enemy);
+            public EnemyController prefab;
+            [Range(1, 100)] public int weight = 10;
         }
 
-        // Also clear enemy bullets
-        GameObject[] enemyBullets = GameObject.FindGameObjectsWithTag("EnemyBullet");
-        foreach (GameObject bullet in enemyBullets)
+        [Header("Spawn Catalog")]
+        [SerializeField] private EnemySpawnEntry[] enemyEntries;
+
+        [Header("Spawn Area")]
+        [SerializeField] private float spawnTopY = 6.5f;
+        [SerializeField] private float minSpawnX = -8.2f;
+        [SerializeField] private float maxSpawnX = 8.2f;
+
+        [Header("Wave Timing")]
+        [SerializeField] private float baseSpawnInterval = 1.2f;
+        [SerializeField] private float minimumSpawnInterval = 0.35f;
+        [SerializeField] private float spawnIntervalReductionPerWave = 0.08f;
+
+        private Coroutine spawnRoutine;
+
+        public bool IsWaveSpawning { get; private set; }
+
+        public void BeginWave(int waveNumber, int enemyCount)
         {
-            Destroy(bullet);
+            StopWaveSpawning();
+            spawnRoutine = StartCoroutine(SpawnWaveRoutine(waveNumber, enemyCount));
+        }
+
+        public void StopWaveSpawning()
+        {
+            if (spawnRoutine != null)
+            {
+                StopCoroutine(spawnRoutine);
+                spawnRoutine = null;
+            }
+
+            IsWaveSpawning = false;
+        }
+
+        private IEnumerator SpawnWaveRoutine(int waveNumber, int enemyCount)
+        {
+            IsWaveSpawning = true;
+            float currentInterval = Mathf.Max(minimumSpawnInterval, baseSpawnInterval - (waveNumber - 1) * spawnIntervalReductionPerWave);
+
+            for (int i = 0; i < enemyCount; i++)
+            {
+                if (GameManager.Instance == null || !GameManager.Instance.IsGameplayActive)
+                {
+                    break;
+                }
+
+                SpawnEnemy(waveNumber);
+                yield return new WaitForSeconds(currentInterval);
+            }
+
+            IsWaveSpawning = false;
+        }
+
+        private void SpawnEnemy(int waveNumber)
+        {
+            EnemyController enemyPrefab = GetWeightedEnemyPrefab();
+            if (enemyPrefab == null)
+            {
+                Debug.LogError("EnemySpawner has no valid enemy prefab assigned.");
+                return;
+            }
+
+            Vector3 spawnPosition = new Vector3(Random.Range(minSpawnX, maxSpawnX), spawnTopY, 0f);
+            EnemyController enemy = Instantiate(enemyPrefab, spawnPosition, Quaternion.identity);
+            enemy.ConfigureFromWave(waveNumber);
+
+            GameManager.Instance?.RegisterEnemySpawned();
+        }
+
+        private EnemyController GetWeightedEnemyPrefab()
+        {
+            if (enemyEntries == null || enemyEntries.Length == 0)
+            {
+                return null;
+            }
+
+            int totalWeight = 0;
+            foreach (EnemySpawnEntry entry in enemyEntries)
+            {
+                if (entry.prefab != null)
+                {
+                    totalWeight += Mathf.Max(1, entry.weight);
+                }
+            }
+
+            if (totalWeight == 0)
+            {
+                return null;
+            }
+
+            int roll = Random.Range(0, totalWeight);
+            int cumulative = 0;
+
+            foreach (EnemySpawnEntry entry in enemyEntries)
+            {
+                if (entry.prefab == null)
+                {
+                    continue;
+                }
+
+                cumulative += Mathf.Max(1, entry.weight);
+                if (roll < cumulative)
+                {
+                    return entry.prefab;
+                }
+            }
+
+            return enemyEntries[0].prefab;
         }
     }
 }
