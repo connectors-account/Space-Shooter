@@ -1,129 +1,165 @@
 using UnityEngine;
 
-/// <summary>
-/// Controls enemy ship behavior including movement, shooting, and health.
-/// </summary>
 public class EnemyController : MonoBehaviour
 {
-    [Header("Movement Settings")]
-    [SerializeField] private float moveSpeed = 3f;
-    [SerializeField] private float horizontalMovement = 0f;
+    public enum MovementType
+    {
+        Straight,
+        Sine,
+        Drift
+    }
 
-    [Header("Shooting Settings")]
-    [SerializeField] private GameObject bulletPrefab;
-    [SerializeField] private float fireRate = 2f;
-    [SerializeField] private bool canShoot = true;
-
-    [Header("Health & Score")]
+    [Header("Runtime Settings")]
     [SerializeField] private int maxHealth = 1;
     [SerializeField] private int scoreValue = 100;
+    [SerializeField] private float moveSpeed = 2.5f;
+    [SerializeField] private float horizontalSpeed = 0f;
+    [SerializeField] private MovementType movementType = MovementType.Straight;
 
-    [Header("Boundaries")]
-    [SerializeField] private float destroyY = -6f;
+    [Header("Shooting")]
+    [SerializeField] private bool canShoot = false;
+    [SerializeField] private float fireCooldown = 1.8f;
+    [SerializeField] private BulletController enemyBulletPrefab;
+
+    [Header("Drops")]
+    [SerializeField, Range(0f, 1f)] private float powerUpDropChance = 0.12f;
+    [SerializeField] private PowerUpController[] powerUpPrefabs;
 
     private int currentHealth;
     private float nextFireTime;
-
-    public int MaxHealth => maxHealth;
-    public int ScoreValue => scoreValue;
+    private float sineSeed;
+    private bool removed;
+    private System.Action<EnemyController, bool, int> onRemoved;
 
     private void Start()
     {
         currentHealth = maxHealth;
-        nextFireTime = Time.time + Random.Range(0.5f, fireRate);
-        
-        // Add slight random horizontal movement variation
-        horizontalMovement = Random.Range(-0.5f, 0.5f);
+        nextFireTime = Time.time + Random.Range(0.5f, fireCooldown);
+        sineSeed = Random.Range(0f, 99f);
+    }
+
+    public void Configure(
+        int health,
+        int points,
+        float speed,
+        float horizontal,
+        bool shoots,
+        float shootCooldown,
+        MovementType pattern,
+        System.Action<EnemyController, bool, int> removedCallback)
+    {
+        maxHealth = Mathf.Max(1, health);
+        currentHealth = maxHealth;
+        scoreValue = Mathf.Max(10, points);
+        moveSpeed = Mathf.Max(0.5f, speed);
+        horizontalSpeed = horizontal;
+        canShoot = shoots;
+        fireCooldown = Mathf.Max(0.35f, shootCooldown);
+        movementType = pattern;
+        onRemoved = removedCallback;
     }
 
     private void Update()
     {
-        if (GameManager.Instance != null && GameManager.Instance.IsGameOver)
+        if (GameManager.Instance == null || GameManager.Instance.CurrentState != GameManager.GameState.Playing)
+        {
             return;
+        }
 
         Move();
-        HandleShooting();
-        CheckBounds();
+        TryShoot();
+
+        if (transform.position.y < -6.8f)
+        {
+            Remove(false);
+        }
     }
 
     private void Move()
     {
-        Vector3 movement = new Vector3(horizontalMovement, -1f, 0f).normalized * moveSpeed * Time.deltaTime;
-        transform.Translate(movement, Space.World);
+        Vector3 velocity = Vector3.down * moveSpeed;
+
+        if (movementType == MovementType.Sine)
+        {
+            float sine = Mathf.Sin((Time.time + sineSeed) * 2f) * 1.4f;
+            velocity.x = sine;
+        }
+        else if (movementType == MovementType.Drift)
+        {
+            velocity.x = horizontalSpeed;
+        }
+
+        transform.position += velocity * Time.deltaTime;
     }
 
-    private void HandleShooting()
+    private void TryShoot()
     {
-        if (!canShoot || bulletPrefab == null)
+        if (!canShoot || enemyBulletPrefab == null || Time.time < nextFireTime)
+        {
             return;
-
-        if (Time.time >= nextFireTime)
-        {
-            Shoot();
-            nextFireTime = Time.time + fireRate + Random.Range(-0.5f, 0.5f);
         }
-    }
 
-    private void Shoot()
-    {
-        Vector3 spawnPosition = transform.position + Vector3.down * 0.5f;
-        GameObject bullet = Instantiate(bulletPrefab, spawnPosition, Quaternion.identity);
-        
-        BulletController bulletController = bullet.GetComponent<BulletController>();
-        if (bulletController != null)
-        {
-            bulletController.Initialize(false, Vector3.down);
-        }
-    }
+        nextFireTime = Time.time + fireCooldown;
 
-    private void CheckBounds()
-    {
-        if (transform.position.y < destroyY)
-        {
-            Destroy(gameObject);
-        }
+        BulletController bullet = Instantiate(enemyBulletPrefab, transform.position + Vector3.down * 0.5f, Quaternion.identity);
+        bullet.Initialize(BulletController.BulletOwner.Enemy, Vector2.down, 1);
     }
 
     public void TakeDamage(int damage)
     {
-        currentHealth -= damage;
-        
+        if (removed)
+        {
+            return;
+        }
+
+        currentHealth -= Mathf.Max(1, damage);
+
         if (currentHealth <= 0)
         {
-            Die();
+            TryDropPowerUp();
+            Remove(true);
         }
     }
 
-    private void Die()
+    private void TryDropPowerUp()
     {
-        // Add score
-        if (GameManager.Instance != null)
+        if (powerUpPrefabs == null || powerUpPrefabs.Length == 0)
         {
-            GameManager.Instance.AddScore(scoreValue);
+            return;
         }
 
+        if (Random.value > powerUpDropChance)
+        {
+            return;
+        }
+
+        int index = Random.Range(0, powerUpPrefabs.Length);
+        Instantiate(powerUpPrefabs[index], transform.position, Quaternion.identity);
+    }
+
+    private void Remove(bool killedByPlayer)
+    {
+        if (removed)
+        {
+            return;
+        }
+
+        removed = true;
+        onRemoved?.Invoke(this, killedByPlayer, scoreValue);
         Destroy(gameObject);
     }
 
     private void OnTriggerEnter2D(Collider2D other)
     {
-        // Handle collision with player bullet
-        if (other.CompareTag("PlayerBullet"))
+        if (other.CompareTag("Player"))
         {
-            TakeDamage(1);
-            Destroy(other.gameObject);
-        }
-    }
+            PlayerController player = other.GetComponent<PlayerController>();
+            if (player != null)
+            {
+                player.TakeDamage(1);
+            }
 
-    /// <summary>
-    /// Configure enemy properties (called by spawner)
-    /// </summary>
-    public void Configure(float speed, int health, int score, bool shooting)
-    {
-        moveSpeed = speed;
-        maxHealth = health;
-        currentHealth = health;
-        scoreValue = score;
-        canShoot = shooting;
+            Remove(false);
+        }
     }
 }

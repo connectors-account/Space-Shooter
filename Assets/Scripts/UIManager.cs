@@ -1,50 +1,42 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 
-/// <summary>
-/// Manages all UI elements including health display, score, and game over screen.
-/// </summary>
 public class UIManager : MonoBehaviour
 {
     public static UIManager Instance { get; private set; }
 
-    [Header("HUD Elements")]
+    [Header("HUD Root")]
+    [SerializeField] private GameObject hudRoot;
+
+    [Header("HUD Widgets")]
     [SerializeField] private Text scoreText;
-    [SerializeField] private Text healthText;
-    [SerializeField] private Image[] healthIcons;
+    [SerializeField] private Text livesText;
+    [SerializeField] private Text waveText;
+    [SerializeField] private Text powerUpText;
+    [SerializeField] private Text messageText;
 
-    [Header("Game Over Panel")]
-    [SerializeField] private GameObject gameOverPanel;
-    [SerializeField] private Text gameOverScoreText;
-    [SerializeField] private Text highScoreText;
-
-    [Header("Pause Menu")]
-    [SerializeField] private GameObject pauseMenuPanel;
+    private Coroutine messageRoutine;
 
     private void Awake()
     {
-        // Singleton pattern
-        if (Instance == null)
-        {
-            Instance = this;
-        }
-        else
+        if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
             return;
         }
+
+        Instance = this;
     }
 
-    private void Start()
+    public void SetHudVisible(bool visible)
     {
-        // Ensure panels are hidden at start
-        HideGameOver();
-        HidePauseMenu();
+        if (hudRoot != null)
+        {
+            hudRoot.SetActive(visible);
+        }
     }
 
-    /// <summary>
-    /// Update the score display.
-    /// </summary>
     public void UpdateScore(int score)
     {
         if (scoreText != null)
@@ -53,115 +45,54 @@ public class UIManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Update the health display.
-    /// </summary>
-    public void UpdateHealth(int currentHealth, int maxHealth)
+    public void UpdateLives(int currentLives, int maxLives)
     {
-        // Update text display
-        if (healthText != null)
+        if (livesText != null)
         {
-            healthText.text = $"Health: {currentHealth}/{maxHealth}";
-        }
-
-        // Update health icons if available
-        if (healthIcons != null && healthIcons.Length > 0)
-        {
-            for (int i = 0; i < healthIcons.Length; i++)
-            {
-                if (healthIcons[i] != null)
-                {
-                    healthIcons[i].enabled = i < currentHealth;
-                }
-            }
+            livesText.text = $"Lives: {currentLives}/{maxLives}";
         }
     }
 
-    /// <summary>
-    /// Show the game over screen with final score.
-    /// </summary>
-    public void ShowGameOver(int finalScore, int highScore)
+    public void UpdateWave(int wave, int totalWaves)
     {
-        if (gameOverPanel != null)
+        if (waveText != null)
         {
-            gameOverPanel.SetActive(true);
-        }
-
-        if (gameOverScoreText != null)
-        {
-            gameOverScoreText.text = $"Final Score: {finalScore}";
-        }
-
-        if (highScoreText != null)
-        {
-            highScoreText.text = $"High Score: {highScore}";
+            waveText.text = $"Wave: {wave}/{totalWaves}";
         }
     }
 
-    /// <summary>
-    /// Hide the game over screen.
-    /// </summary>
-    public void HideGameOver()
+    public void UpdatePowerUpStatus(bool shieldActive, bool rapidFireActive)
     {
-        if (gameOverPanel != null)
+        if (powerUpText == null)
         {
-            gameOverPanel.SetActive(false);
+            return;
         }
+
+        string shield = shieldActive ? "Shield ON" : "Shield OFF";
+        string rapid = rapidFireActive ? "Rapid Fire ON" : "Rapid Fire OFF";
+        powerUpText.text = $"{shield} | {rapid}";
     }
 
-    /// <summary>
-    /// Show the pause menu.
-    /// </summary>
-    public void ShowPauseMenu()
+    public void ShowMessage(string message, float duration)
     {
-        if (pauseMenuPanel != null)
+        if (messageText == null)
         {
-            pauseMenuPanel.SetActive(true);
+            return;
         }
+
+        if (messageRoutine != null)
+        {
+            StopCoroutine(messageRoutine);
+        }
+
+        messageRoutine = StartCoroutine(MessageRoutine(message, duration));
     }
 
-    /// <summary>
-    /// Hide the pause menu.
-    /// </summary>
-    public void HidePauseMenu()
+    private IEnumerator MessageRoutine(string message, float duration)
     {
-        if (pauseMenuPanel != null)
-        {
-            pauseMenuPanel.SetActive(false);
-        }
-    }
-
-    // Button callback methods (can be assigned in Unity Inspector)
-    
-    public void OnRestartButtonClicked()
-    {
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.RestartGame();
-        }
-    }
-
-    public void OnResumeButtonClicked()
-    {
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.TogglePause();
-        }
-    }
-
-    public void OnQuitButtonClicked()
-    {
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.QuitGame();
-        }
-    }
-
-    private void OnDestroy()
-    {
-        if (Instance == this)
-        {
-            Instance = null;
-        }
+        messageText.text = message;
+        messageText.gameObject.SetActive(true);
+        yield return new WaitForSeconds(duration);
+        messageText.gameObject.SetActive(false);
     }
 }

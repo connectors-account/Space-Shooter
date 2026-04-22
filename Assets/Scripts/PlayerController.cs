@@ -1,41 +1,52 @@
+using System.Collections;
 using UnityEngine;
 
-/// <summary>
-/// Controls the player ship movement, shooting, and health management.
-/// </summary>
 public class PlayerController : MonoBehaviour
 {
-    [Header("Movement Settings")]
+    [Header("Movement")]
     [SerializeField] private float moveSpeed = 8f;
-    [SerializeField] private float horizontalBoundary = 8f;
-    [SerializeField] private float verticalBoundaryTop = 4f;
-    [SerializeField] private float verticalBoundaryBottom = -4f;
+    [SerializeField] private Vector2 minBounds = new Vector2(-8.5f, -4.5f);
+    [SerializeField] private Vector2 maxBounds = new Vector2(8.5f, 4.5f);
 
-    [Header("Shooting Settings")]
-    [SerializeField] private GameObject bulletPrefab;
+    [Header("Shooting")]
+    [SerializeField] private BulletController playerBulletPrefab;
     [SerializeField] private Transform firePoint;
-    [SerializeField] private float fireRate = 0.25f;
+    [SerializeField] private float normalFireCooldown = 0.25f;
+    [SerializeField] private float rapidFireCooldown = 0.1f;
 
-    [Header("Health Settings")]
-    [SerializeField] private int maxHealth = 3;
+    [Header("Health / Lives")]
+    [SerializeField] private int maxLives = 5;
+    [SerializeField] private float invulnerableDuration = 1f;
 
-    private int currentHealth;
-    private float nextFireTime = 0f;
-    private bool canControl = true;
+    [Header("Power-up Durations")]
+    [SerializeField] private float shieldDuration = 6f;
+    [SerializeField] private float rapidFireDuration = 6f;
 
-    public int CurrentHealth => currentHealth;
-    public int MaxHealth => maxHealth;
+    [Header("Visual")]
+    [SerializeField] private GameObject shieldVisual;
+
+    private int currentLives;
+    private float nextShootTime;
+    private bool shieldActive;
+    private bool rapidFireActive;
+    private bool invulnerable;
+
+    public int CurrentLives => currentLives;
+    public int MaxLives => maxLives;
+    public bool ShieldActive => shieldActive;
+    public bool RapidFireActive => rapidFireActive;
 
     private void Start()
     {
-        currentHealth = maxHealth;
-        UpdateHealthUI();
+        ResetPlayer();
     }
 
     private void Update()
     {
-        if (!canControl || GameManager.Instance == null || GameManager.Instance.IsGameOver)
+        if (GameManager.Instance == null || GameManager.Instance.CurrentState != GameManager.GameState.Playing)
+        {
             return;
+        }
 
         HandleMovement();
         HandleShooting();
@@ -43,130 +54,145 @@ public class PlayerController : MonoBehaviour
 
     private void HandleMovement()
     {
-        float horizontalInput = Input.GetAxis("Horizontal");
-        float verticalInput = Input.GetAxis("Vertical");
+        float horizontal = Input.GetAxisRaw("Horizontal");
+        float vertical = Input.GetAxisRaw("Vertical");
 
-        // WASD and Arrow keys are both mapped to Horizontal/Vertical by default in Unity
-        Vector3 movement = new Vector3(horizontalInput, verticalInput, 0f) * moveSpeed * Time.deltaTime;
-        transform.Translate(movement, Space.World);
+        Vector3 move = new Vector3(horizontal, vertical, 0f).normalized * moveSpeed * Time.deltaTime;
+        transform.position += move;
 
-        // Clamp position to screen boundaries
-        float clampedX = Mathf.Clamp(transform.position.x, -horizontalBoundary, horizontalBoundary);
-        float clampedY = Mathf.Clamp(transform.position.y, verticalBoundaryBottom, verticalBoundaryTop);
-        transform.position = new Vector3(clampedX, clampedY, transform.position.z);
+        float clampedX = Mathf.Clamp(transform.position.x, minBounds.x, maxBounds.x);
+        float clampedY = Mathf.Clamp(transform.position.y, minBounds.y, maxBounds.y);
+        transform.position = new Vector3(clampedX, clampedY, 0f);
     }
 
     private void HandleShooting()
     {
-        if (Input.GetKey(KeyCode.Space) && Time.time >= nextFireTime)
+        if (!Input.GetKey(KeyCode.Space) || Time.time < nextShootTime)
         {
-            Shoot();
-            nextFireTime = Time.time + fireRate;
-        }
-    }
-
-    private void Shoot()
-    {
-        if (bulletPrefab == null)
-        {
-            Debug.LogWarning("Bullet prefab not assigned to PlayerController!");
             return;
         }
 
-        Vector3 spawnPosition = firePoint != null ? firePoint.position : transform.position + Vector3.up * 0.5f;
-        GameObject bullet = Instantiate(bulletPrefab, spawnPosition, Quaternion.identity);
-        
-        BulletController bulletController = bullet.GetComponent<BulletController>();
-        if (bulletController != null)
+        if (playerBulletPrefab == null || firePoint == null)
         {
-            bulletController.Initialize(true, Vector3.up);
+            return;
         }
+
+        float cooldown = rapidFireActive ? rapidFireCooldown : normalFireCooldown;
+        nextShootTime = Time.time + cooldown;
+
+        BulletController bullet = Instantiate(playerBulletPrefab, firePoint.position, Quaternion.identity);
+        bullet.Initialize(BulletController.BulletOwner.Player, Vector2.up, 1);
+        AudioManager.Instance?.PlayShoot();
     }
 
     public void TakeDamage(int damage)
     {
-        currentHealth -= damage;
-        currentHealth = Mathf.Max(currentHealth, 0);
-        
-        UpdateHealthUI();
-
-        if (currentHealth <= 0)
+        if (damage <= 0 || invulnerable || shieldActive)
         {
-            Die();
+            return;
         }
+
+        currentLives -= damage;
+        currentLives = Mathf.Clamp(currentLives, 0, maxLives);
+        UIManager.Instance?.UpdateLives(currentLives, maxLives);
+        AudioManager.Instance?.PlayPlayerHit();
+
+        if (currentLives <= 0)
+        {
+            GameManager.Instance?.OnPlayerDeath();
+            gameObject.SetActive(false);
+            return;
+        }
+
+        StartCoroutine(InvulnerableRoutine());
     }
 
-    private void UpdateHealthUI()
+    public void Heal(int amount)
     {
-        if (UIManager.Instance != null)
+        if (amount <= 0)
         {
-            UIManager.Instance.UpdateHealth(currentHealth, maxHealth);
+            return;
         }
+
+        currentLives = Mathf.Clamp(currentLives + amount, 0, maxLives);
+        UIManager.Instance?.UpdateLives(currentLives, maxLives);
     }
 
-    private void Die()
+    public void ActivateShield()
     {
-        canControl = false;
-        
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.GameOver();
-        }
-
-        // Visual feedback - disable renderer instead of destroying
-        SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null)
-        {
-            spriteRenderer.enabled = false;
-        }
-
-        // Disable collider
-        Collider2D col = GetComponent<Collider2D>();
-        if (col != null)
-        {
-            col.enabled = false;
-        }
+        StartCoroutine(ShieldRoutine());
     }
 
-    private void OnTriggerEnter2D(Collider2D other)
+    public void ActivateRapidFire()
     {
-        // Handle collision with enemy
-        if (other.CompareTag("Enemy"))
-        {
-            TakeDamage(1);
-            
-            EnemyController enemy = other.GetComponent<EnemyController>();
-            if (enemy != null)
-            {
-                enemy.TakeDamage(enemy.MaxHealth); // Destroy enemy on collision
-            }
-        }
-        // Handle collision with enemy bullet
-        else if (other.CompareTag("EnemyBullet"))
-        {
-            TakeDamage(1);
-            Destroy(other.gameObject);
-        }
+        StartCoroutine(RapidFireRoutine());
     }
 
     public void ResetPlayer()
     {
-        currentHealth = maxHealth;
-        canControl = true;
-        transform.position = new Vector3(0f, -3f, 0f);
-        
-        SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null)
+        StopAllCoroutines();
+
+        currentLives = maxLives;
+        shieldActive = false;
+        rapidFireActive = false;
+        invulnerable = false;
+        nextShootTime = 0f;
+
+        transform.position = new Vector3(0f, -3.8f, 0f);
+        gameObject.SetActive(true);
+
+        if (shieldVisual != null)
         {
-            spriteRenderer.enabled = true;
+            shieldVisual.SetActive(false);
         }
 
-        Collider2D col = GetComponent<Collider2D>();
-        if (col != null)
+        UIManager.Instance?.UpdateLives(currentLives, maxLives);
+        UIManager.Instance?.UpdatePowerUpStatus(shieldActive, rapidFireActive);
+    }
+
+    private IEnumerator ShieldRoutine()
+    {
+        shieldActive = true;
+        if (shieldVisual != null)
         {
-            col.enabled = true;
+            shieldVisual.SetActive(true);
         }
 
-        UpdateHealthUI();
+        UIManager.Instance?.UpdatePowerUpStatus(shieldActive, rapidFireActive);
+        yield return new WaitForSeconds(shieldDuration);
+
+        shieldActive = false;
+        if (shieldVisual != null)
+        {
+            shieldVisual.SetActive(false);
+        }
+
+        UIManager.Instance?.UpdatePowerUpStatus(shieldActive, rapidFireActive);
+    }
+
+    private IEnumerator RapidFireRoutine()
+    {
+        rapidFireActive = true;
+        UIManager.Instance?.UpdatePowerUpStatus(shieldActive, rapidFireActive);
+
+        yield return new WaitForSeconds(rapidFireDuration);
+
+        rapidFireActive = false;
+        UIManager.Instance?.UpdatePowerUpStatus(shieldActive, rapidFireActive);
+    }
+
+    private IEnumerator InvulnerableRoutine()
+    {
+        invulnerable = true;
+        yield return new WaitForSeconds(invulnerableDuration);
+        invulnerable = false;
+    }
+
+    private void OnTriggerEnter2D(Collider2D other)
+    {
+        if (other.CompareTag("Enemy"))
+        {
+            TakeDamage(1);
+        }
     }
 }
