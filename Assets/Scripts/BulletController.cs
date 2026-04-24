@@ -1,68 +1,56 @@
 using UnityEngine;
 
 /// <summary>
-/// Controls bullet movement and behavior for both player and enemy bullets.
+/// Bullet movement and collision handling.
 /// </summary>
 public class BulletController : MonoBehaviour
 {
-    [Header("Bullet Settings")]
     [SerializeField] private float speed = 12f;
-    [SerializeField] private float lifetime = 3f;
+    [SerializeField] private float lifetime = 4f;
 
+    private bool isPlayerBullet;
     private Vector3 moveDirection = Vector3.up;
-    private bool isPlayerBullet = true;
 
-    public bool IsPlayerBullet => isPlayerBullet;
+    public void Initialize(bool firedByPlayer, Vector3 direction)
+    {
+        isPlayerBullet = firedByPlayer;
+        moveDirection = direction.normalized;
+
+        gameObject.tag = firedByPlayer ? "PlayerBullet" : "EnemyBullet";
+    }
 
     private void Start()
     {
-        // Destroy bullet after lifetime expires
         Destroy(gameObject, lifetime);
     }
 
     private void Update()
     {
-        Move();
+        transform.position += moveDirection * speed * Time.deltaTime;
     }
 
-    private void Move()
+    private void OnTriggerEnter2D(Collider2D other)
     {
-        transform.Translate(moveDirection * speed * Time.deltaTime, Space.World);
-    }
-
-    /// <summary>
-    /// Initialize the bullet with direction and ownership.
-    /// </summary>
-    /// <param name="playerBullet">True if fired by player, false if fired by enemy</param>
-    /// <param name="direction">Direction the bullet should travel</param>
-    public void Initialize(bool playerBullet, Vector3 direction)
-    {
-        isPlayerBullet = playerBullet;
-        moveDirection = direction.normalized;
-
-        // Set appropriate tag based on ownership
-        if (playerBullet)
+        if (isPlayerBullet && other.CompareTag("Enemy"))
         {
-            gameObject.tag = "PlayerBullet";
-        }
-        else
-        {
-            gameObject.tag = "EnemyBullet";
+            EnemyController enemy = other.GetComponent<EnemyController>();
+            if (enemy != null)
+            {
+                enemy.TakeDamage(1);
+            }
+
+            Destroy(gameObject);
+            return;
         }
 
-        // Rotate bullet to face movement direction
-        if (direction != Vector3.zero)
+        if (!isPlayerBullet && other.CompareTag("Player"))
         {
-            float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg - 90f;
-            transform.rotation = Quaternion.Euler(0f, 0f, angle);
-        }
-    }
+            if (GameManager.Instance != null)
+            {
+                GameManager.Instance.DamagePlayer(1);
+            }
 
-    /// <summary>
-    /// Set bullet speed.
-    /// </summary>
-    public void SetSpeed(float newSpeed)
-    {
-        speed = newSpeed;
+            Destroy(gameObject);
+        }
     }
 }

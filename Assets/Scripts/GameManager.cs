@@ -2,35 +2,33 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Manages overall game state, score, and game flow.
+/// Central game state manager: score, player health, and game-over flow.
 /// </summary>
 public class GameManager : MonoBehaviour
 {
     public static GameManager Instance { get; private set; }
 
-    [Header("Game Settings")]
-    [SerializeField] private int startingScore = 0;
+    [Header("Player Health")]
+    [SerializeField] private int maxHealth = 5;
 
+    private int currentHealth;
     private int currentScore;
-    private bool isGameOver = false;
-    private bool isPaused = false;
+    private bool isGameOver;
 
+    public int CurrentHealth => currentHealth;
+    public int MaxHealth => maxHealth;
     public int CurrentScore => currentScore;
     public bool IsGameOver => isGameOver;
-    public bool IsPaused => isPaused;
 
     private void Awake()
     {
-        // Singleton pattern
-        if (Instance == null)
-        {
-            Instance = this;
-        }
-        else
+        if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
             return;
         }
+
+        Instance = this;
     }
 
     private void Start()
@@ -40,20 +38,6 @@ public class GameManager : MonoBehaviour
 
     private void Update()
     {
-        HandlePauseInput();
-        HandleRestartInput();
-    }
-
-    private void HandlePauseInput()
-    {
-        if (Input.GetKeyDown(KeyCode.Escape) && !isGameOver)
-        {
-            TogglePause();
-        }
-    }
-
-    private void HandleRestartInput()
-    {
         if (isGameOver && Input.GetKeyDown(KeyCode.R))
         {
             RestartGame();
@@ -62,34 +46,48 @@ public class GameManager : MonoBehaviour
 
     public void StartGame()
     {
-        currentScore = startingScore;
+        currentScore = 0;
+        currentHealth = maxHealth;
         isGameOver = false;
-        isPaused = false;
         Time.timeScale = 1f;
-
-        UpdateScoreUI();
 
         if (UIManager.Instance != null)
         {
+            UIManager.Instance.UpdateScore(currentScore);
+            UIManager.Instance.UpdateHealth(currentHealth, maxHealth);
             UIManager.Instance.HideGameOver();
-            UIManager.Instance.HidePauseMenu();
         }
     }
 
-    public void AddScore(int points)
+    public void AddScore(int value)
     {
         if (isGameOver)
             return;
 
-        currentScore += points;
-        UpdateScoreUI();
-    }
-
-    private void UpdateScoreUI()
-    {
+        currentScore += value;
         if (UIManager.Instance != null)
         {
             UIManager.Instance.UpdateScore(currentScore);
+        }
+    }
+
+    public void DamagePlayer(int damage)
+    {
+        if (isGameOver)
+            return;
+
+        currentHealth -= damage;
+        if (currentHealth < 0)
+            currentHealth = 0;
+
+        if (UIManager.Instance != null)
+        {
+            UIManager.Instance.UpdateHealth(currentHealth, maxHealth);
+        }
+
+        if (currentHealth <= 0)
+        {
+            GameOver();
         }
     }
 
@@ -99,57 +97,27 @@ public class GameManager : MonoBehaviour
             return;
 
         isGameOver = true;
-        Time.timeScale = 0f;
 
-        // Save high score
         int highScore = PlayerPrefs.GetInt("HighScore", 0);
         if (currentScore > highScore)
         {
-            PlayerPrefs.SetInt("HighScore", currentScore);
+            highScore = currentScore;
+            PlayerPrefs.SetInt("HighScore", highScore);
             PlayerPrefs.Save();
         }
 
         if (UIManager.Instance != null)
         {
-            UIManager.Instance.ShowGameOver(currentScore, PlayerPrefs.GetInt("HighScore", 0));
+            UIManager.Instance.ShowGameOver(currentScore, highScore);
         }
 
-        Debug.Log($"Game Over! Final Score: {currentScore}");
+        Time.timeScale = 0f;
     }
 
     public void RestartGame()
     {
         Time.timeScale = 1f;
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
-    }
-
-    public void TogglePause()
-    {
-        isPaused = !isPaused;
-        Time.timeScale = isPaused ? 0f : 1f;
-
-        if (UIManager.Instance != null)
-        {
-            if (isPaused)
-            {
-                UIManager.Instance.ShowPauseMenu();
-            }
-            else
-            {
-                UIManager.Instance.HidePauseMenu();
-            }
-        }
-    }
-
-    public void QuitGame()
-    {
-        Debug.Log("Quitting game...");
-        
-        #if UNITY_EDITOR
-            UnityEditor.EditorApplication.isPlaying = false;
-        #else
-            Application.Quit();
-        #endif
     }
 
     private void OnDestroy()
