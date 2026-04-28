@@ -1,162 +1,146 @@
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
-/// <summary>
-/// Manages overall game state, score, and game flow.
-/// </summary>
+public enum GameFlowState
+{
+    MainMenu,
+    Playing,
+    Paused,
+    GameOver,
+    Victory
+}
+
 public class GameManager : MonoBehaviour
 {
     public static GameManager Instance { get; private set; }
 
-    [Header("Game Settings")]
-    [SerializeField] private int startingScore = 0;
+    [Header("References")]
+    [SerializeField] private PlayerController playerController;
+    [SerializeField] private EnemyManager enemyManager;
 
-    private int currentScore;
-    private bool isGameOver = false;
-    private bool isPaused = false;
-
-    public int CurrentScore => currentScore;
-    public bool IsGameOver => isGameOver;
-    public bool IsPaused => isPaused;
+    public int Score { get; private set; }
+    public GameFlowState CurrentState { get; private set; } = GameFlowState.MainMenu;
+    public bool IsGameplayActive => CurrentState == GameFlowState.Playing;
 
     private void Awake()
     {
-        // Singleton pattern
-        if (Instance == null)
-        {
-            Instance = this;
-        }
-        else
+        if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
             return;
         }
+
+        Instance = this;
     }
 
     private void Start()
     {
-        StartGame();
+        Time.timeScale = 1f;
+        UIManager.Instance?.ShowMainMenu(true);
+        UIManager.Instance?.ShowGameplayHud(false);
+        UIManager.Instance?.ShowPauseMenu(false);
+        UIManager.Instance?.ShowEndPanel(false, false, 0);
     }
 
     private void Update()
     {
-        HandlePauseInput();
-        HandleRestartInput();
-    }
-
-    private void HandlePauseInput()
-    {
-        if (Input.GetKeyDown(KeyCode.Escape) && !isGameOver)
+        if (CurrentState == GameFlowState.Playing && Input.GetKeyDown(KeyCode.Escape))
+        {
+            TogglePause();
+        }
+        else if (CurrentState == GameFlowState.Paused && Input.GetKeyDown(KeyCode.Escape))
         {
             TogglePause();
         }
     }
 
-    private void HandleRestartInput()
-    {
-        if (isGameOver && Input.GetKeyDown(KeyCode.R))
-        {
-            RestartGame();
-        }
-    }
-
     public void StartGame()
     {
-        currentScore = startingScore;
-        isGameOver = false;
-        isPaused = false;
+        Score = 0;
+        CurrentState = GameFlowState.Playing;
         Time.timeScale = 1f;
 
-        UpdateScoreUI();
+        UIManager.Instance?.SetScore(Score);
+        UIManager.Instance?.SetWave(1, enemyManager != null ? enemyManager.TotalWaves : 5);
+        UIManager.Instance?.ShowMainMenu(false);
+        UIManager.Instance?.ShowPauseMenu(false);
+        UIManager.Instance?.ShowGameplayHud(true);
+        UIManager.Instance?.ShowEndPanel(false, false, 0);
 
-        if (UIManager.Instance != null)
+        if (playerController != null)
         {
-            UIManager.Instance.HideGameOver();
-            UIManager.Instance.HidePauseMenu();
+            playerController.gameObject.SetActive(true);
+        }
+
+        enemyManager?.BeginWaves();
+        AudioManager.Instance?.PlayMusic();
+    }
+
+    public void TogglePause()
+    {
+        if (CurrentState == GameFlowState.Playing)
+        {
+            CurrentState = GameFlowState.Paused;
+            Time.timeScale = 0f;
+            UIManager.Instance?.ShowPauseMenu(true);
+        }
+        else if (CurrentState == GameFlowState.Paused)
+        {
+            CurrentState = GameFlowState.Playing;
+            Time.timeScale = 1f;
+            UIManager.Instance?.ShowPauseMenu(false);
         }
     }
 
     public void AddScore(int points)
     {
-        if (isGameOver)
-            return;
-
-        currentScore += points;
-        UpdateScoreUI();
+        Score += Mathf.Max(0, points);
+        UIManager.Instance?.SetScore(Score);
     }
 
-    private void UpdateScoreUI()
+    public void OnWaveStarted(int waveNumber)
     {
-        if (UIManager.Instance != null)
+        UIManager.Instance?.SetWave(waveNumber, enemyManager != null ? enemyManager.TotalWaves : 5);
+        AudioManager.Instance?.PlaySfx(AudioSfx.WaveStart);
+    }
+
+    public void OnWaveCompleted(int waveNumber)
+    {
+        AddScore(250 + (waveNumber * 50));
+    }
+
+    public void OnAllWavesCompleted()
+    {
+        if (CurrentState != GameFlowState.Playing)
         {
-            UIManager.Instance.UpdateScore(currentScore);
-        }
-    }
-
-    public void GameOver()
-    {
-        if (isGameOver)
             return;
+        }
 
-        isGameOver = true;
+        CurrentState = GameFlowState.Victory;
         Time.timeScale = 0f;
-
-        // Save high score
-        int highScore = PlayerPrefs.GetInt("HighScore", 0);
-        if (currentScore > highScore)
-        {
-            PlayerPrefs.SetInt("HighScore", currentScore);
-            PlayerPrefs.Save();
-        }
-
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.ShowGameOver(currentScore, PlayerPrefs.GetInt("HighScore", 0));
-        }
-
-        Debug.Log($"Game Over! Final Score: {currentScore}");
+        UIManager.Instance?.ShowEndPanel(true, true, Score);
+        AudioManager.Instance?.PlaySfx(AudioSfx.Win);
     }
 
-    public void RestartGame()
+    public void OnPlayerDied()
     {
-        Time.timeScale = 1f;
-        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
-    }
-
-    public void TogglePause()
-    {
-        isPaused = !isPaused;
-        Time.timeScale = isPaused ? 0f : 1f;
-
-        if (UIManager.Instance != null)
+        if (CurrentState != GameFlowState.Playing)
         {
-            if (isPaused)
-            {
-                UIManager.Instance.ShowPauseMenu();
-            }
-            else
-            {
-                UIManager.Instance.HidePauseMenu();
-            }
+            return;
         }
+
+        CurrentState = GameFlowState.GameOver;
+        Time.timeScale = 0f;
+        enemyManager?.StopWaves();
+        UIManager.Instance?.ShowEndPanel(true, false, Score);
+        AudioManager.Instance?.PlaySfx(AudioSfx.GameOver);
     }
 
     public void QuitGame()
     {
-        Debug.Log("Quitting game...");
-        
         #if UNITY_EDITOR
-            UnityEditor.EditorApplication.isPlaying = false;
+        UnityEditor.EditorApplication.isPlaying = false;
         #else
-            Application.Quit();
+        Application.Quit();
         #endif
-    }
-
-    private void OnDestroy()
-    {
-        if (Instance == this)
-        {
-            Instance = null;
-        }
     }
 }
