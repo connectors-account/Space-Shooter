@@ -57,3 +57,5 @@ crashlytics-build.properties
 .vs/
 *.csproj
 *.sln
+!Assembly-CSharp.csproj
+!Space-Shooter.sln
