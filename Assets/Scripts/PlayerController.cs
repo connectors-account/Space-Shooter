@@ -1,172 +1,204 @@
 using UnityEngine;
 
 /// <summary>
-/// Controls the player ship movement, shooting, and health management.
+/// Controls player ship movement, shooting, and health.
+/// Attach to the Player GameObject (a simple triangle/arrow shape).
 /// </summary>
 public class PlayerController : MonoBehaviour
 {
-    [Header("Movement Settings")]
-    [SerializeField] private float moveSpeed = 8f;
-    [SerializeField] private float horizontalBoundary = 8f;
-    [SerializeField] private float verticalBoundaryTop = 4f;
-    [SerializeField] private float verticalBoundaryBottom = -4f;
+    [Header("Movement")]
+    public float moveSpeed = 8f;
+    public float padding = 0.5f;
 
-    [Header("Shooting Settings")]
-    [SerializeField] private GameObject bulletPrefab;
-    [SerializeField] private Transform firePoint;
-    [SerializeField] private float fireRate = 0.25f;
+    [Header("Shooting")]
+    public GameObject bulletPrefab;
+    public Transform firePoint;
+    public float fireRate = 0.2f;
+    public int weaponLevel = 1;
 
-    [Header("Health Settings")]
-    [SerializeField] private int maxHealth = 3;
+    [Header("Health")]
+    public int maxHealth = 5;
+    public int currentHealth;
 
-    private int currentHealth;
+    [Header("Invincibility")]
+    public float invincibilityDuration = 1.5f;
+    private float invincibilityTimer = 0f;
+    private bool isInvincible = false;
+    private SpriteRenderer spriteRenderer;
+
     private float nextFireTime = 0f;
-    private bool canControl = true;
+    private float minX, maxX, minY, maxY;
 
-    public int CurrentHealth => currentHealth;
-    public int MaxHealth => maxHealth;
-
-    private void Start()
+    void Start()
     {
         currentHealth = maxHealth;
-        UpdateHealthUI();
+        spriteRenderer = GetComponent<SpriteRenderer>();
+        CalculateBounds();
+
+        if (UIManager.Instance != null)
+            UIManager.Instance.UpdateHealth(currentHealth, maxHealth);
     }
 
-    private void Update()
+    void CalculateBounds()
     {
-        if (!canControl || GameManager.Instance == null || GameManager.Instance.IsGameOver)
-            return;
+        Camera cam = Camera.main;
+        if (cam == null) return;
+        minX = cam.ViewportToWorldPoint(Vector3.zero).x + padding;
+        maxX = cam.ViewportToWorldPoint(Vector3.right).x - padding;
+        minY = cam.ViewportToWorldPoint(Vector3.zero).y + padding;
+        maxY = cam.ViewportToWorldPoint(Vector3.up).y - padding;
+    }
+
+    void Update()
+    {
+        if (GameManager.Instance != null && !GameManager.Instance.isGameActive) return;
 
         HandleMovement();
         HandleShooting();
+        HandleInvincibility();
     }
 
-    private void HandleMovement()
+    void HandleMovement()
     {
-        float horizontalInput = Input.GetAxis("Horizontal");
-        float verticalInput = Input.GetAxis("Vertical");
+        float h = Input.GetAxis("Horizontal");
+        float v = Input.GetAxis("Vertical");
+        Vector3 movement = new Vector3(h, v, 0f) * moveSpeed * Time.deltaTime;
+        transform.position += movement;
 
-        // WASD and Arrow keys are both mapped to Horizontal/Vertical by default in Unity
-        Vector3 movement = new Vector3(horizontalInput, verticalInput, 0f) * moveSpeed * Time.deltaTime;
-        transform.Translate(movement, Space.World);
-
-        // Clamp position to screen boundaries
-        float clampedX = Mathf.Clamp(transform.position.x, -horizontalBoundary, horizontalBoundary);
-        float clampedY = Mathf.Clamp(transform.position.y, verticalBoundaryBottom, verticalBoundaryTop);
-        transform.position = new Vector3(clampedX, clampedY, transform.position.z);
+        // Clamp position to screen bounds
+        float clampedX = Mathf.Clamp(transform.position.x, minX, maxX);
+        float clampedY = Mathf.Clamp(transform.position.y, minY, maxY);
+        transform.position = new Vector3(clampedX, clampedY, 0f);
     }
 
-    private void HandleShooting()
+    void HandleShooting()
     {
         if (Input.GetKey(KeyCode.Space) && Time.time >= nextFireTime)
         {
-            Shoot();
             nextFireTime = Time.time + fireRate;
+            Shoot();
         }
     }
 
-    private void Shoot()
+    void Shoot()
     {
-        if (bulletPrefab == null)
+        if (bulletPrefab == null) return;
+
+        Vector3 spawnPos = firePoint != null ? firePoint.position : transform.position + Vector3.up * 0.6f;
+
+        // Single shot
+        GameObject bullet = Instantiate(bulletPrefab, spawnPos, Quaternion.identity);
+        BulletController bc = bullet.GetComponent<BulletController>();
+        if (bc != null) bc.isPlayerBullet = true;
+
+        // Spread shots for higher weapon levels
+        if (weaponLevel >= 2)
         {
-            Debug.LogWarning("Bullet prefab not assigned to PlayerController!");
-            return;
+            GameObject bL = Instantiate(bulletPrefab, spawnPos + Vector3.left * 0.3f, Quaternion.Euler(0, 0, 10));
+            BulletController bcL = bL.GetComponent<BulletController>();
+            if (bcL != null) bcL.isPlayerBullet = true;
+
+            GameObject bR = Instantiate(bulletPrefab, spawnPos + Vector3.right * 0.3f, Quaternion.Euler(0, 0, -10));
+            BulletController bcR = bR.GetComponent<BulletController>();
+            if (bcR != null) bcR.isPlayerBullet = true;
         }
 
-        Vector3 spawnPosition = firePoint != null ? firePoint.position : transform.position + Vector3.up * 0.5f;
-        GameObject bullet = Instantiate(bulletPrefab, spawnPosition, Quaternion.identity);
-        
-        BulletController bulletController = bullet.GetComponent<BulletController>();
-        if (bulletController != null)
+        if (weaponLevel >= 3)
         {
-            bulletController.Initialize(true, Vector3.up);
+            GameObject bFL = Instantiate(bulletPrefab, spawnPos + Vector3.left * 0.5f, Quaternion.Euler(0, 0, 20));
+            BulletController bcFL = bFL.GetComponent<BulletController>();
+            if (bcFL != null) bcFL.isPlayerBullet = true;
+
+            GameObject bFR = Instantiate(bulletPrefab, spawnPos + Vector3.right * 0.5f, Quaternion.Euler(0, 0, -20));
+            BulletController bcFR = bFR.GetComponent<BulletController>();
+            if (bcFR != null) bcFR.isPlayerBullet = true;
+        }
+
+        // Play sound if AudioManager exists
+        if (AudioManager.Instance != null)
+            AudioManager.Instance.PlayShoot();
+    }
+
+    void HandleInvincibility()
+    {
+        if (!isInvincible) return;
+        invincibilityTimer -= Time.deltaTime;
+
+        // Blink effect
+        if (spriteRenderer != null)
+        {
+            float alpha = Mathf.PingPong(Time.time * 10f, 1f) > 0.5f ? 1f : 0.3f;
+            Color c = spriteRenderer.color;
+            c.a = alpha;
+            spriteRenderer.color = c;
+        }
+
+        if (invincibilityTimer <= 0f)
+        {
+            isInvincible = false;
+            if (spriteRenderer != null)
+            {
+                Color c = spriteRenderer.color;
+                c.a = 1f;
+                spriteRenderer.color = c;
+            }
         }
     }
 
     public void TakeDamage(int damage)
     {
+        if (isInvincible) return;
+
         currentHealth -= damage;
-        currentHealth = Mathf.Max(currentHealth, 0);
-        
-        UpdateHealthUI();
+        currentHealth = Mathf.Max(0, currentHealth);
+
+        if (UIManager.Instance != null)
+            UIManager.Instance.UpdateHealth(currentHealth, maxHealth);
+
+        if (AudioManager.Instance != null)
+            AudioManager.Instance.PlayHit();
 
         if (currentHealth <= 0)
         {
             Die();
+            return;
         }
+
+        // Start invincibility
+        isInvincible = true;
+        invincibilityTimer = invincibilityDuration;
     }
 
-    private void UpdateHealthUI()
+    public void Heal(int amount)
     {
+        currentHealth = Mathf.Min(currentHealth + amount, maxHealth);
         if (UIManager.Instance != null)
-        {
             UIManager.Instance.UpdateHealth(currentHealth, maxHealth);
-        }
     }
 
-    private void Die()
+    public void UpgradeWeapon()
     {
-        canControl = false;
-        
+        weaponLevel = Mathf.Min(weaponLevel + 1, 3);
+    }
+
+    void Die()
+    {
+        if (AudioManager.Instance != null)
+            AudioManager.Instance.PlayExplosion();
+
         if (GameManager.Instance != null)
-        {
             GameManager.Instance.GameOver();
-        }
 
-        // Visual feedback - disable renderer instead of destroying
-        SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null)
-        {
-            spriteRenderer.enabled = false;
-        }
-
-        // Disable collider
-        Collider2D col = GetComponent<Collider2D>();
-        if (col != null)
-        {
-            col.enabled = false;
-        }
+        gameObject.SetActive(false);
     }
 
-    private void OnTriggerEnter2D(Collider2D other)
+    void OnTriggerEnter2D(Collider2D other)
     {
-        // Handle collision with enemy
         if (other.CompareTag("Enemy"))
         {
             TakeDamage(1);
-            
             EnemyController enemy = other.GetComponent<EnemyController>();
-            if (enemy != null)
-            {
-                enemy.TakeDamage(enemy.MaxHealth); // Destroy enemy on collision
-            }
+            if (enemy != null) enemy.TakeDamage(999);
         }
-        // Handle collision with enemy bullet
-        else if (other.CompareTag("EnemyBullet"))
-        {
-            TakeDamage(1);
-            Destroy(other.gameObject);
-        }
-    }
-
-    public void ResetPlayer()
-    {
-        currentHealth = maxHealth;
-        canControl = true;
-        transform.position = new Vector3(0f, -3f, 0f);
-        
-        SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null)
-        {
-            spriteRenderer.enabled = true;
-        }
-
-        Collider2D col = GetComponent<Collider2D>();
-        if (col != null)
-        {
-            col.enabled = true;
-        }
-
-        UpdateHealthUI();
     }
 }

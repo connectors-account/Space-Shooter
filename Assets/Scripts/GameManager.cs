@@ -1,27 +1,46 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using System.Collections;
+using System.Collections.Generic;
 
 /// <summary>
-/// Manages overall game state, score, and game flow.
+/// Central game manager handling spawning, waves, scoring, and game state.
+/// Singleton - persists as the main orchestrator of gameplay.
 /// </summary>
 public class GameManager : MonoBehaviour
 {
     public static GameManager Instance { get; private set; }
 
-    [Header("Game Settings")]
-    [SerializeField] private int startingScore = 0;
+    [Header("Game State")]
+    public bool isGameActive = false;
+    public int score = 0;
+    public int currentWave = 0;
+    public int highScore = 0;
 
-    private int currentScore;
-    private bool isGameOver = false;
-    private bool isPaused = false;
+    [Header("Enemy Prefabs")]
+    public GameObject[] enemyPrefabs; // Assign in Inspector: BasicEnemy, ZigzagEnemy, ShooterEnemy, DiverEnemy
 
-    public int CurrentScore => currentScore;
-    public bool IsGameOver => isGameOver;
-    public bool IsPaused => isPaused;
+    [Header("Power-Up Prefabs")]
+    public GameObject healthPowerUpPrefab;
+    public GameObject weaponPowerUpPrefab;
 
-    private void Awake()
+    [Header("Wave Settings")]
+    public float timeBetweenWaves = 3f;
+    public int baseEnemiesPerWave = 5;
+    public float spawnInterval = 1f;
+
+    [Header("Spawn Bounds")]
+    public float spawnMinX = -5f;
+    public float spawnMaxX = 5f;
+    public float spawnY = 7f;
+
+    private int enemiesAliveCount = 0;
+    private int enemiesSpawnedThisWave = 0;
+    private int enemiesToSpawnThisWave = 0;
+    private bool isSpawning = false;
+
+    void Awake()
     {
-        // Singleton pattern
         if (Instance == null)
         {
             Instance = this;
@@ -31,132 +50,167 @@ public class GameManager : MonoBehaviour
             Destroy(gameObject);
             return;
         }
+
+        highScore = PlayerPrefs.GetInt("HighScore", 0);
     }
 
-    private void Start()
-    {
-        StartGame();
-    }
-
-    private void Update()
-    {
-        HandlePauseInput();
-        HandleRestartInput();
-    }
-
-    private void HandlePauseInput()
-    {
-        if (Input.GetKeyDown(KeyCode.Escape) && !isGameOver)
-        {
-            TogglePause();
-        }
-    }
-
-    private void HandleRestartInput()
-    {
-        if (isGameOver && Input.GetKeyDown(KeyCode.R))
-        {
-            RestartGame();
-        }
-    }
-
+    /// <summary>
+    /// Called by MenuManager or UIManager to begin gameplay.
+    /// </summary>
     public void StartGame()
     {
-        currentScore = startingScore;
-        isGameOver = false;
-        isPaused = false;
-        Time.timeScale = 1f;
-
-        UpdateScoreUI();
+        score = 0;
+        currentWave = 0;
+        isGameActive = true;
+        enemiesAliveCount = 0;
 
         if (UIManager.Instance != null)
         {
-            UIManager.Instance.HideGameOver();
-            UIManager.Instance.HidePauseMenu();
+            UIManager.Instance.UpdateScore(score);
+            UIManager.Instance.UpdateWave(currentWave);
+            UIManager.Instance.ShowGameUI();
+        }
+
+        StartCoroutine(StartNextWave());
+    }
+
+    IEnumerator StartNextWave()
+    {
+        currentWave++;
+        enemiesToSpawnThisWave = baseEnemiesPerWave + (currentWave - 1) * 2;
+        enemiesSpawnedThisWave = 0;
+
+        if (UIManager.Instance != null)
+        {
+            UIManager.Instance.UpdateWave(currentWave);
+            UIManager.Instance.ShowWaveAnnouncement(currentWave);
+        }
+
+        yield return new WaitForSeconds(timeBetweenWaves);
+
+        if (!isGameActive) yield break;
+
+        isSpawning = true;
+        StartCoroutine(SpawnWaveEnemies());
+    }
+
+    IEnumerator SpawnWaveEnemies()
+    {
+        while (enemiesSpawnedThisWave < enemiesToSpawnThisWave && isGameActive)
+        {
+            SpawnEnemy();
+            enemiesSpawnedThisWave++;
+
+            float interval = Mathf.Max(0.3f, spawnInterval - currentWave * 0.05f);
+            yield return new WaitForSeconds(interval);
+        }
+        isSpawning = false;
+    }
+
+    void SpawnEnemy()
+    {
+        if (enemyPrefabs == null || enemyPrefabs.Length == 0) return;
+
+        // Choose enemy type based on wave difficulty
+        int prefabIndex = ChooseEnemyType();
+        GameObject prefab = enemyPrefabs[Mathf.Clamp(prefabIndex, 0, enemyPrefabs.Length - 1)];
+
+        float xPos = Random.Range(spawnMinX, spawnMaxX);
+        Vector3 spawnPos = new Vector3(xPos, spawnY, 0f);
+
+        GameObject enemy = Instantiate(prefab, spawnPos, Quaternion.identity);
+        EnemyController ec = enemy.GetComponent<EnemyController>();
+        if (ec != null)
+        {
+            // Scale difficulty with waves
+            ec.maxHealth = Mathf.Min(2 + (currentWave / 3), 6);
+            ec.currentHealth = ec.maxHealth;
+            ec.moveSpeed += currentWave * 0.15f;
+            ec.scoreValue = 100 + (currentWave - 1) * 20;
+        }
+
+        enemiesAliveCount++;
+    }
+
+    int ChooseEnemyType()
+    {
+        if (enemyPrefabs.Length == 1) return 0;
+
+        // Progressively unlock harder enemy types
+        int maxType = Mathf.Min(enemyPrefabs.Length - 1, (currentWave - 1) / 2);
+        return Random.Range(0, maxType + 1);
+    }
+
+    public void EnemyDestroyed()
+    {
+        enemiesAliveCount = Mathf.Max(0, enemiesAliveCount - 1);
+
+        // Check if wave is complete
+        if (enemiesAliveCount <= 0 && !isSpawning && isGameActive)
+        {
+            StartCoroutine(StartNextWave());
         }
     }
 
     public void AddScore(int points)
     {
-        if (isGameOver)
-            return;
-
-        currentScore += points;
-        UpdateScoreUI();
+        if (!isGameActive) return;
+        score += points;
+        if (UIManager.Instance != null)
+            UIManager.Instance.UpdateScore(score);
     }
 
-    private void UpdateScoreUI()
+    public void SpawnPowerUp(Vector3 position)
     {
-        if (UIManager.Instance != null)
+        GameObject prefab = Random.value > 0.5f ? healthPowerUpPrefab : weaponPowerUpPrefab;
+        if (prefab != null)
         {
-            UIManager.Instance.UpdateScore(currentScore);
+            Instantiate(prefab, position, Quaternion.identity);
         }
     }
 
     public void GameOver()
     {
-        if (isGameOver)
-            return;
-
-        isGameOver = true;
-        Time.timeScale = 0f;
+        isGameActive = false;
+        isSpawning = false;
+        StopAllCoroutines();
 
         // Save high score
-        int highScore = PlayerPrefs.GetInt("HighScore", 0);
-        if (currentScore > highScore)
+        if (score > highScore)
         {
-            PlayerPrefs.SetInt("HighScore", currentScore);
+            highScore = score;
+            PlayerPrefs.SetInt("HighScore", highScore);
             PlayerPrefs.Save();
         }
 
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.ShowGameOver(currentScore, PlayerPrefs.GetInt("HighScore", 0));
-        }
+        // Clean up remaining enemies and bullets
+        CleanUpGameObjects();
 
-        Debug.Log($"Game Over! Final Score: {currentScore}");
+        if (UIManager.Instance != null)
+            UIManager.Instance.ShowGameOver(score, highScore);
+    }
+
+    void CleanUpGameObjects()
+    {
+        foreach (GameObject enemy in GameObject.FindGameObjectsWithTag("Enemy"))
+            Destroy(enemy);
+        foreach (GameObject bullet in GameObject.FindGameObjectsWithTag("Bullet"))
+            Destroy(bullet);
+        foreach (GameObject powerUp in GameObject.FindGameObjectsWithTag("PowerUp"))
+            Destroy(powerUp);
     }
 
     public void RestartGame()
     {
-        Time.timeScale = 1f;
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
-    }
-
-    public void TogglePause()
-    {
-        isPaused = !isPaused;
-        Time.timeScale = isPaused ? 0f : 1f;
-
-        if (UIManager.Instance != null)
-        {
-            if (isPaused)
-            {
-                UIManager.Instance.ShowPauseMenu();
-            }
-            else
-            {
-                UIManager.Instance.HidePauseMenu();
-            }
-        }
     }
 
     public void QuitGame()
     {
-        Debug.Log("Quitting game...");
-        
         #if UNITY_EDITOR
-            UnityEditor.EditorApplication.isPlaying = false;
+        UnityEditor.EditorApplication.isPlaying = false;
         #else
-            Application.Quit();
+        Application.Quit();
         #endif
-    }
-
-    private void OnDestroy()
-    {
-        if (Instance == this)
-        {
-            Instance = null;
-        }
     }
 }
