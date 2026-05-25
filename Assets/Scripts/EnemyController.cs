@@ -1,129 +1,252 @@
 using UnityEngine;
 
 /// <summary>
-/// Controls enemy ship behavior including movement, shooting, and health.
+/// Controls enemy behavior: movement patterns, shooting, health, and drops.
+/// Attach to Enemy GameObjects with Rigidbody2D and Collider2D.
 /// </summary>
 public class EnemyController : MonoBehaviour
 {
-    [Header("Movement Settings")]
-    [SerializeField] private float moveSpeed = 3f;
-    [SerializeField] private float horizontalMovement = 0f;
+    public enum MovementPattern { Straight, Zigzag, Sine, Dive }
 
-    [Header("Shooting Settings")]
-    [SerializeField] private GameObject bulletPrefab;
+    [Header("Movement")]
+    [SerializeField] private float moveSpeed = 3f;
+    [SerializeField] private MovementPattern pattern = MovementPattern.Straight;
+    [SerializeField] private float zigzagAmplitude = 2f;
+    [SerializeField] private float zigzagFrequency = 2f;
+
+    [Header("Shooting")]
+    [SerializeField] private GameObject enemyBulletPrefab;
     [SerializeField] private float fireRate = 2f;
+    [SerializeField] private float bulletSpeed = 6f;
     [SerializeField] private bool canShoot = true;
 
-    [Header("Health & Score")]
-    [SerializeField] private int maxHealth = 1;
+    [Header("Stats")]
+    [SerializeField] private int health = 1;
     [SerializeField] private int scoreValue = 100;
+    [SerializeField] private float powerUpDropChance = 0.15f;
 
-    [Header("Boundaries")]
-    [SerializeField] private float destroyY = -6f;
+    [Header("References")]
+    [SerializeField] private GameObject powerUpPrefab;
 
-    private int currentHealth;
+    // Internal state
     private float nextFireTime;
-
-    public int MaxHealth => maxHealth;
-    public int ScoreValue => scoreValue;
+    private float spawnTime;
+    private Vector3 startPosition;
+    private float screenBottom;
 
     private void Start()
     {
-        currentHealth = maxHealth;
+        spawnTime = Time.time;
+        startPosition = transform.position;
+
+        Camera cam = Camera.main;
+        if (cam != null)
+        {
+            screenBottom = cam.ScreenToWorldPoint(new Vector3(0, 0, cam.transform.position.z)).y - 1f;
+        }
+        else
+        {
+            screenBottom = -7f;
+        }
+
         nextFireTime = Time.time + Random.Range(0.5f, fireRate);
-        
-        // Add slight random horizontal movement variation
-        horizontalMovement = Random.Range(-0.5f, 0.5f);
     }
 
     private void Update()
     {
-        if (GameManager.Instance != null && GameManager.Instance.IsGameOver)
-            return;
-
-        Move();
+        HandleMovement();
         HandleShooting();
-        CheckBounds();
+        CheckOffScreen();
     }
 
-    private void Move()
+    /// <summary>
+    /// Moves the enemy based on the selected movement pattern.
+    /// </summary>
+    private void HandleMovement()
     {
-        Vector3 movement = new Vector3(horizontalMovement, -1f, 0f).normalized * moveSpeed * Time.deltaTime;
-        transform.Translate(movement, Space.World);
+        float elapsed = Time.time - spawnTime;
+        Vector3 pos = transform.position;
+
+        switch (pattern)
+        {
+            case MovementPattern.Straight:
+                pos.y -= moveSpeed * Time.deltaTime;
+                break;
+
+            case MovementPattern.Zigzag:
+                pos.y -= moveSpeed * Time.deltaTime;
+                pos.x = startPosition.x + Mathf.Sin(elapsed * zigzagFrequency) * zigzagAmplitude;
+                break;
+
+            case MovementPattern.Sine:
+                pos.y -= moveSpeed * Time.deltaTime;
+                pos.x = startPosition.x + Mathf.Sin(elapsed * zigzagFrequency) * zigzagAmplitude;
+                break;
+
+            case MovementPattern.Dive:
+                // Dives toward the player if available, otherwise goes straight
+                GameObject player = GameObject.FindGameObjectWithTag("Player");
+                if (player != null && player.activeInHierarchy)
+                {
+                    Vector3 dir = (player.transform.position - pos).normalized;
+                    pos += dir * moveSpeed * Time.deltaTime;
+                }
+                else
+                {
+                    pos.y -= moveSpeed * Time.deltaTime;
+                }
+                break;
+        }
+
+        transform.position = pos;
     }
 
+    /// <summary>
+    /// Fires bullets downward at the set fire rate.
+    /// </summary>
     private void HandleShooting()
     {
-        if (!canShoot || bulletPrefab == null)
-            return;
+        if (!canShoot || enemyBulletPrefab == null) return;
+        if (Time.time < nextFireTime) return;
 
-        if (Time.time >= nextFireTime)
+        nextFireTime = Time.time + fireRate + Random.Range(-0.3f, 0.3f);
+
+        GameObject bullet = Instantiate(enemyBulletPrefab, transform.position, Quaternion.identity);
+        BulletController bc = bullet.GetComponent<BulletController>();
+        if (bc != null)
         {
-            Shoot();
-            nextFireTime = Time.time + fireRate + Random.Range(-0.5f, 0.5f);
+            bc.Initialize(Vector2.down, bulletSpeed, false);
         }
+
+        AudioManager.Instance?.PlaySFX("EnemyShoot");
     }
 
-    private void Shoot()
+    /// <summary>
+    /// Destroys the enemy if it moves off the bottom of the screen.
+    /// </summary>
+    private void CheckOffScreen()
     {
-        Vector3 spawnPosition = transform.position + Vector3.down * 0.5f;
-        GameObject bullet = Instantiate(bulletPrefab, spawnPosition, Quaternion.identity);
-        
-        BulletController bulletController = bullet.GetComponent<BulletController>();
-        if (bulletController != null)
-        {
-            bulletController.Initialize(false, Vector3.down);
-        }
-    }
-
-    private void CheckBounds()
-    {
-        if (transform.position.y < destroyY)
+        if (transform.position.y < screenBottom)
         {
             Destroy(gameObject);
         }
     }
 
+    /// <summary>
+    /// Applies damage to the enemy. Destroys it if health reaches zero.
+    /// </summary>
     public void TakeDamage(int damage)
     {
-        currentHealth -= damage;
-        
-        if (currentHealth <= 0)
+        health -= damage;
+
+        // Flash red briefly
+        SpriteRenderer sr = GetComponent<SpriteRenderer>();
+        if (sr != null)
+        {
+            StartCoroutine(FlashDamage(sr));
+        }
+
+        if (health <= 0)
         {
             Die();
         }
     }
 
+    /// <summary>
+    /// Brief red flash when hit.
+    /// </summary>
+    private System.Collections.IEnumerator FlashDamage(SpriteRenderer sr)
+    {
+        Color original = sr.color;
+        sr.color = Color.red;
+        yield return new WaitForSeconds(0.08f);
+        if (sr != null) sr.color = original;
+    }
+
+    /// <summary>
+    /// Handles enemy death: awards score, spawns effects/drops, then destroys.
+    /// </summary>
     private void Die()
     {
-        // Add score
+        AudioManager.Instance?.PlaySFX("EnemyDeath");
+
         if (GameManager.Instance != null)
-        {
             GameManager.Instance.AddScore(scoreValue);
+
+        // Chance to drop power-up
+        if (Random.value < powerUpDropChance)
+        {
+            SpawnPowerUp();
         }
+
+        // Simple explosion effect — spawn a brief expanding circle
+        SpawnExplosionEffect();
 
         Destroy(gameObject);
     }
 
-    private void OnTriggerEnter2D(Collider2D other)
+    /// <summary>
+    /// Spawns a random power-up at the enemy's position.
+    /// </summary>
+    private void SpawnPowerUp()
     {
-        // Handle collision with player bullet
-        if (other.CompareTag("PlayerBullet"))
+        if (powerUpPrefab != null)
         {
-            TakeDamage(1);
-            Destroy(other.gameObject);
+            Instantiate(powerUpPrefab, transform.position, Quaternion.identity);
         }
     }
 
     /// <summary>
-    /// Configure enemy properties (called by spawner)
+    /// Creates a simple expanding circle explosion effect.
     /// </summary>
-    public void Configure(float speed, int health, int score, bool shooting)
+    private void SpawnExplosionEffect()
     {
-        moveSpeed = speed;
-        maxHealth = health;
-        currentHealth = health;
-        scoreValue = score;
-        canShoot = shooting;
+        GameObject explosion = new GameObject("Explosion");
+        explosion.transform.position = transform.position;
+        SpriteRenderer sr = explosion.AddComponent<SpriteRenderer>();
+        sr.sprite = CreateCircleSprite();
+        sr.color = new Color(1f, 0.6f, 0.1f, 0.8f);
+        sr.sortingOrder = 10;
+        explosion.AddComponent<ExplosionEffect>();
     }
+
+    private Sprite CreateCircleSprite()
+    {
+        int size = 32;
+        Texture2D tex = new Texture2D(size, size);
+        Color[] colors = new Color[size * size];
+        float center = size / 2f;
+        float radius = size / 2f;
+
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                float dist = Vector2.Distance(new Vector2(x, y), new Vector2(center, center));
+                colors[y * size + x] = dist <= radius ? Color.white : Color.clear;
+            }
+        }
+
+        tex.SetPixels(colors);
+        tex.Apply();
+        return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 32f);
+    }
+
+    private void OnTriggerEnter2D(Collider2D other)
+    {
+        if (other.CompareTag("Player"))
+        {
+            TakeDamage(health); // Destroy on contact
+        }
+    }
+
+    // --- Configuration setters used by EnemySpawner ---
+    public void SetMoveSpeed(float speed) => moveSpeed = speed;
+    public void SetHealth(int hp) => health = hp;
+    public void SetScoreValue(int score) => scoreValue = score;
+    public void SetPattern(MovementPattern p) => pattern = p;
+    public void SetFireRate(float rate) => fireRate = rate;
+    public void SetCanShoot(bool shoot) => canShoot = shoot;
+    public void SetPowerUpPrefab(GameObject prefab) => powerUpPrefab = prefab;
+    public void SetEnemyBulletPrefab(GameObject prefab) => enemyBulletPrefab = prefab;
 }

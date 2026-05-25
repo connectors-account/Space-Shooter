@@ -2,156 +2,241 @@ using UnityEngine;
 using System.Collections;
 
 /// <summary>
-/// Spawns enemy ships at random positions at the top of the screen.
+/// Manages wave-based enemy spawning with progressive difficulty.
+/// Attach to an empty GameObject in the scene.
 /// </summary>
 public class EnemySpawner : MonoBehaviour
 {
+    [Header("Prefabs")]
+    [SerializeField] private GameObject enemyPrefab;
+    [SerializeField] private GameObject enemyBulletPrefab;
+    [SerializeField] private GameObject powerUpPrefab;
+
     [Header("Spawn Settings")]
-    [SerializeField] private GameObject[] enemyPrefabs;
-    [SerializeField] private float initialSpawnRate = 2f;
-    [SerializeField] private float minimumSpawnRate = 0.5f;
-    [SerializeField] private float spawnRateDecrease = 0.1f;
-    [SerializeField] private float difficultyIncreaseInterval = 30f;
+    [SerializeField] private float spawnYPosition = 6.5f;
+    [SerializeField] private float spawnXRange = 7f;
+    [SerializeField] private float timeBetweenWaves = 3f;
+    [SerializeField] private int baseEnemiesPerWave = 4;
+    [SerializeField] private float spawnInterval = 0.5f;
 
-    [Header("Spawn Area")]
-    [SerializeField] private float spawnY = 6f;
-    [SerializeField] private float spawnXMin = -7f;
-    [SerializeField] private float spawnXMax = 7f;
+    // Wave tracking
+    private int currentWave;
+    private bool isSpawning;
+    private bool gameActive;
 
-    [Header("Enemy Configuration")]
-    [SerializeField] private float enemySpeedMin = 2f;
-    [SerializeField] private float enemySpeedMax = 4f;
-    [SerializeField] private bool enemiesCanShoot = true;
-
-    private float currentSpawnRate;
-    private float nextSpawnTime;
-    private float nextDifficultyIncrease;
-    private bool isSpawning = true;
+    // Difficulty scaling
+    private float difficultyMultiplier = 1f;
+    private readonly float difficultyIncrement = 0.15f;
 
     private void Start()
     {
-        currentSpawnRate = initialSpawnRate;
-        nextSpawnTime = Time.time + currentSpawnRate;
-        nextDifficultyIncrease = Time.time + difficultyIncreaseInterval;
-    }
-
-    private void Update()
-    {
-        if (GameManager.Instance != null && GameManager.Instance.IsGameOver)
-        {
-            isSpawning = false;
-            return;
-        }
-
-        if (!isSpawning)
-            return;
-
-        // Handle spawning
-        if (Time.time >= nextSpawnTime)
-        {
-            SpawnEnemy();
-            nextSpawnTime = Time.time + currentSpawnRate;
-        }
-
-        // Increase difficulty over time
-        if (Time.time >= nextDifficultyIncrease)
-        {
-            IncreaseDifficulty();
-            nextDifficultyIncrease = Time.time + difficultyIncreaseInterval;
-        }
-    }
-
-    private void SpawnEnemy()
-    {
-        if (enemyPrefabs == null || enemyPrefabs.Length == 0)
-        {
-            Debug.LogWarning("No enemy prefabs assigned to EnemySpawner!");
-            return;
-        }
-
-        // Select random enemy prefab
-        int randomIndex = Random.Range(0, enemyPrefabs.Length);
-        GameObject enemyPrefab = enemyPrefabs[randomIndex];
-
+        // Create enemy prefab at runtime if not assigned
         if (enemyPrefab == null)
         {
-            Debug.LogWarning("Enemy prefab at index " + randomIndex + " is null!");
-            return;
+            enemyPrefab = CreateEnemyPrefab();
         }
-
-        // Calculate spawn position
-        float spawnX = Random.Range(spawnXMin, spawnXMax);
-        Vector3 spawnPosition = new Vector3(spawnX, spawnY, 0f);
-
-        // Instantiate enemy
-        GameObject enemy = Instantiate(enemyPrefab, spawnPosition, Quaternion.Euler(0f, 0f, 180f));
-
-        // Configure enemy properties
-        EnemyController enemyController = enemy.GetComponent<EnemyController>();
-        if (enemyController != null)
+        if (enemyBulletPrefab == null)
         {
-            float randomSpeed = Random.Range(enemySpeedMin, enemySpeedMax);
-            enemyController.Configure(randomSpeed, 1, 100, enemiesCanShoot);
+            enemyBulletPrefab = CreateBulletPrefab(false);
         }
-    }
-
-    private void IncreaseDifficulty()
-    {
-        // Decrease spawn rate (spawn enemies more frequently)
-        currentSpawnRate = Mathf.Max(minimumSpawnRate, currentSpawnRate - spawnRateDecrease);
-        
-        // Increase enemy speed range
-        enemySpeedMin = Mathf.Min(enemySpeedMin + 0.2f, 5f);
-        enemySpeedMax = Mathf.Min(enemySpeedMax + 0.3f, 8f);
-
-        Debug.Log($"Difficulty increased! Spawn rate: {currentSpawnRate:F2}s, Speed: {enemySpeedMin:F1}-{enemySpeedMax:F1}");
+        if (powerUpPrefab == null)
+        {
+            powerUpPrefab = CreatePowerUpPrefab();
+        }
     }
 
     /// <summary>
-    /// Start or resume spawning.
+    /// Starts the wave spawning system. Called by GameManager when game begins.
     /// </summary>
     public void StartSpawning()
     {
-        isSpawning = true;
+        currentWave = 0;
+        difficultyMultiplier = 1f;
+        gameActive = true;
+        StartCoroutine(SpawnWaves());
     }
 
     /// <summary>
-    /// Stop spawning enemies.
+    /// Stops all spawning. Called on game over.
     /// </summary>
     public void StopSpawning()
     {
-        isSpawning = false;
+        gameActive = false;
+        StopAllCoroutines();
     }
 
     /// <summary>
-    /// Reset spawner to initial settings.
+    /// Coroutine that manages wave progression.
     /// </summary>
-    public void ResetSpawner()
+    private IEnumerator SpawnWaves()
     {
-        currentSpawnRate = initialSpawnRate;
-        enemySpeedMin = 2f;
-        enemySpeedMax = 4f;
-        isSpawning = true;
-        nextSpawnTime = Time.time + currentSpawnRate;
-        nextDifficultyIncrease = Time.time + difficultyIncreaseInterval;
+        yield return new WaitForSeconds(1.5f); // Initial delay
+
+        while (gameActive)
+        {
+            currentWave++;
+            difficultyMultiplier = 1f + (currentWave - 1) * difficultyIncrement;
+
+            int enemyCount = baseEnemiesPerWave + (currentWave - 1);
+            enemyCount = Mathf.Min(enemyCount, 15); // Cap at 15 enemies per wave
+
+            if (GameManager.Instance != null)
+                GameManager.Instance.UpdateWave(currentWave);
+
+            yield return StartCoroutine(SpawnWave(enemyCount));
+
+            // Wait for most enemies to be cleared or timeout
+            yield return new WaitForSeconds(timeBetweenWaves);
+        }
     }
 
     /// <summary>
-    /// Destroy all existing enemies in the scene.
+    /// Spawns a single wave of enemies with varied patterns.
     /// </summary>
-    public void ClearAllEnemies()
+    private IEnumerator SpawnWave(int count)
     {
-        GameObject[] enemies = GameObject.FindGameObjectsWithTag("Enemy");
-        foreach (GameObject enemy in enemies)
+        for (int i = 0; i < count && gameActive; i++)
         {
-            Destroy(enemy);
-        }
-
-        // Also clear enemy bullets
-        GameObject[] enemyBullets = GameObject.FindGameObjectsWithTag("EnemyBullet");
-        foreach (GameObject bullet in enemyBullets)
-        {
-            Destroy(bullet);
+            SpawnEnemy();
+            yield return new WaitForSeconds(spawnInterval / difficultyMultiplier);
         }
     }
+
+    /// <summary>
+    /// Spawns a single enemy with randomized properties based on difficulty.
+    /// </summary>
+    private void SpawnEnemy()
+    {
+        float xPos = Random.Range(-spawnXRange, spawnXRange);
+        Vector3 spawnPos = new Vector3(xPos, spawnYPosition, 0);
+
+        GameObject enemy = Instantiate(enemyPrefab, spawnPos, Quaternion.identity);
+        EnemyController ec = enemy.GetComponent<EnemyController>();
+
+        if (ec != null)
+        {
+            // Assign prefab references
+            ec.SetEnemyBulletPrefab(enemyBulletPrefab);
+            ec.SetPowerUpPrefab(powerUpPrefab);
+
+            // Randomize movement pattern
+            EnemyController.MovementPattern pattern = GetRandomPattern();
+            ec.SetPattern(pattern);
+
+            // Scale difficulty
+            float speed = Random.Range(2f, 4f) * Mathf.Sqrt(difficultyMultiplier);
+            ec.SetMoveSpeed(speed);
+
+            int hp = 1 + Mathf.FloorToInt((currentWave - 1) / 3f);
+            hp = Mathf.Min(hp, 5);
+            ec.SetHealth(hp);
+
+            int score = 100 * hp;
+            ec.SetScoreValue(score);
+
+            // Higher waves — enemies shoot more frequently
+            float fireRate = Mathf.Max(0.8f, 2.5f - currentWave * 0.15f);
+            ec.SetFireRate(fireRate);
+
+            // Some enemies can't shoot (variety)
+            ec.SetCanShoot(Random.value > 0.3f);
+        }
+    }
+
+    /// <summary>
+    /// Returns a weighted random movement pattern.
+    /// </summary>
+    private EnemyController.MovementPattern GetRandomPattern()
+    {
+        float roll = Random.value;
+        if (roll < 0.35f) return EnemyController.MovementPattern.Straight;
+        if (roll < 0.60f) return EnemyController.MovementPattern.Zigzag;
+        if (roll < 0.80f) return EnemyController.MovementPattern.Sine;
+        return EnemyController.MovementPattern.Dive;
+    }
+
+    // ==================== Runtime Prefab Creators ====================
+    // These create simple geometric GameObjects when no prefabs are assigned.
+
+    private GameObject CreateEnemyPrefab()
+    {
+        GameObject prefab = new GameObject("EnemyPrefab");
+        prefab.tag = "Enemy";
+        prefab.layer = 0;
+
+        SpriteRenderer sr = prefab.AddComponent<SpriteRenderer>();
+        sr.sprite = SpriteFactory.CreateTriangleSprite(Color.red);
+        sr.color = Color.red;
+        sr.sortingOrder = 3;
+
+        // Flip triangle to point downward
+        prefab.transform.localScale = new Vector3(0.7f, -0.7f, 1f);
+
+        BoxCollider2D col = prefab.AddComponent<BoxCollider2D>();
+        col.isTrigger = true;
+        col.size = new Vector2(0.8f, 0.8f);
+
+        Rigidbody2D rb = prefab.AddComponent<Rigidbody2D>();
+        rb.gravityScale = 0;
+        rb.isKinematic = true;
+
+        prefab.AddComponent<EnemyController>();
+
+        prefab.SetActive(false); // Treat as prefab template
+        return prefab;
+    }
+
+    private GameObject CreateBulletPrefab(bool isPlayer)
+    {
+        GameObject prefab = new GameObject(isPlayer ? "PlayerBulletPrefab" : "EnemyBulletPrefab");
+        prefab.tag = isPlayer ? "PlayerBullet" : "EnemyBullet";
+
+        SpriteRenderer sr = prefab.AddComponent<SpriteRenderer>();
+        sr.sprite = SpriteFactory.CreateRectSprite(isPlayer ? Color.green : Color.red);
+        sr.color = isPlayer ? Color.green : Color.red;
+        sr.sortingOrder = 4;
+
+        prefab.transform.localScale = new Vector3(0.15f, 0.4f, 1f);
+
+        BoxCollider2D col = prefab.AddComponent<BoxCollider2D>();
+        col.isTrigger = true;
+        col.size = new Vector2(1f, 1f);
+
+        Rigidbody2D rb = prefab.AddComponent<Rigidbody2D>();
+        rb.gravityScale = 0;
+        rb.isKinematic = true;
+
+        prefab.AddComponent<BulletController>();
+
+        prefab.SetActive(false);
+        return prefab;
+    }
+
+    private GameObject CreatePowerUpPrefab()
+    {
+        GameObject prefab = new GameObject("PowerUpPrefab");
+        prefab.tag = "PowerUp";
+
+        SpriteRenderer sr = prefab.AddComponent<SpriteRenderer>();
+        sr.sprite = SpriteFactory.CreateDiamondSprite(Color.yellow);
+        sr.color = Color.yellow;
+        sr.sortingOrder = 4;
+
+        prefab.transform.localScale = Vector3.one * 0.5f;
+
+        CircleCollider2D col = prefab.AddComponent<CircleCollider2D>();
+        col.isTrigger = true;
+        col.radius = 0.5f;
+
+        Rigidbody2D rb = prefab.AddComponent<Rigidbody2D>();
+        rb.gravityScale = 0;
+        rb.isKinematic = true;
+
+        prefab.AddComponent<PowerUpController>();
+
+        prefab.SetActive(false);
+        return prefab;
+    }
+
+    public int GetCurrentWave() => currentWave;
 }
