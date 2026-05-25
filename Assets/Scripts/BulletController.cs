@@ -1,68 +1,67 @@
 using UnityEngine;
 
 /// <summary>
-/// Controls bullet movement and behavior for both player and enemy bullets.
+/// Controls bullet movement, collision detection, and damage dealing.
+/// Attach to Bullet prefab GameObjects.
 /// </summary>
 public class BulletController : MonoBehaviour
 {
     [Header("Bullet Settings")]
-    [SerializeField] private float speed = 12f;
-    [SerializeField] private float lifetime = 3f;
+    public float speed = 12f;
+    public int damage = 1;
+    public bool isPlayerBullet = true;
+    public Vector3 direction = Vector3.up;
+    public float lifetime = 4f;
 
-    private Vector3 moveDirection = Vector3.up;
-    private bool isPlayerBullet = true;
+    private float spawnTime;
 
-    public bool IsPlayerBullet => isPlayerBullet;
-
-    private void Start()
+    void Start()
     {
-        // Destroy bullet after lifetime expires
-        Destroy(gameObject, lifetime);
-    }
+        spawnTime = Time.time;
 
-    private void Update()
-    {
-        Move();
-    }
-
-    private void Move()
-    {
-        transform.Translate(moveDirection * speed * Time.deltaTime, Space.World);
-    }
-
-    /// <summary>
-    /// Initialize the bullet with direction and ownership.
-    /// </summary>
-    /// <param name="playerBullet">True if fired by player, false if fired by enemy</param>
-    /// <param name="direction">Direction the bullet should travel</param>
-    public void Initialize(bool playerBullet, Vector3 direction)
-    {
-        isPlayerBullet = playerBullet;
-        moveDirection = direction.normalized;
-
-        // Set appropriate tag based on ownership
-        if (playerBullet)
+        // If the bullet was rotated (spread shots), adjust direction accordingly
+        if (transform.rotation != Quaternion.identity && isPlayerBullet)
         {
-            gameObject.tag = "PlayerBullet";
-        }
-        else
-        {
-            gameObject.tag = "EnemyBullet";
-        }
-
-        // Rotate bullet to face movement direction
-        if (direction != Vector3.zero)
-        {
-            float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg - 90f;
-            transform.rotation = Quaternion.Euler(0f, 0f, angle);
+            direction = transform.up;
         }
     }
 
-    /// <summary>
-    /// Set bullet speed.
-    /// </summary>
-    public void SetSpeed(float newSpeed)
+    void Update()
     {
-        speed = newSpeed;
+        transform.position += direction.normalized * speed * Time.deltaTime;
+
+        // Destroy if lifetime exceeded or out of bounds
+        if (Time.time - spawnTime > lifetime || IsOutOfBounds())
+        {
+            Destroy(gameObject);
+        }
+    }
+
+    bool IsOutOfBounds()
+    {
+        return Mathf.Abs(transform.position.x) > 12f ||
+               Mathf.Abs(transform.position.y) > 8f;
+    }
+
+    void OnTriggerEnter2D(Collider2D other)
+    {
+        if (isPlayerBullet && other.CompareTag("Enemy"))
+        {
+            EnemyController enemy = other.GetComponent<EnemyController>();
+            if (enemy != null)
+            {
+                enemy.TakeDamage(damage);
+            }
+            Destroy(gameObject);
+        }
+        else if (!isPlayerBullet && other.CompareTag("Player"))
+        {
+            PlayerController player = other.GetComponent<PlayerController>();
+            if (player != null)
+            {
+                player.TakeDamage(damage);
+            }
+            Destroy(gameObject);
+        }
     }
 }
