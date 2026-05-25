@@ -2,161 +2,237 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Manages overall game state, score, and game flow.
+/// Central game state manager — handles scoring, health, game flow, and scene transitions.
+/// Singleton pattern — persists across the game session.
 /// </summary>
 public class GameManager : MonoBehaviour
 {
     public static GameManager Instance { get; private set; }
 
-    [Header("Game Settings")]
-    [SerializeField] private int startingScore = 0;
+    [Header("Game State")]
+    private int score;
+    private int highScore;
+    private int currentWave;
+    private int playerHealth;
+    private int playerMaxHealth;
+    private bool isGameOver;
+    private bool isGameActive;
 
-    private int currentScore;
-    private bool isGameOver = false;
-    private bool isPaused = false;
+    // References (found at runtime)
+    private UIManager uiManager;
+    private EnemySpawner enemySpawner;
+    private PlayerController playerController;
 
-    public int CurrentScore => currentScore;
-    public bool IsGameOver => isGameOver;
-    public bool IsPaused => isPaused;
+    private const string HighScoreKey = "HighScore";
 
     private void Awake()
     {
-        // Singleton pattern
-        if (Instance == null)
-        {
-            Instance = this;
-        }
-        else
+        // Singleton setup
+        if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
             return;
         }
+        Instance = this;
     }
 
     private void Start()
     {
-        StartGame();
+        highScore = PlayerPrefs.GetInt(HighScoreKey, 0);
+        FindReferences();
+        ShowMainMenu();
     }
 
-    private void Update()
+    /// <summary>
+    /// Locates key components in the scene.
+    /// </summary>
+    private void FindReferences()
     {
-        HandlePauseInput();
-        HandleRestartInput();
+        uiManager = FindObjectOfType<UIManager>();
+        enemySpawner = FindObjectOfType<EnemySpawner>();
+        playerController = FindObjectOfType<PlayerController>();
     }
 
-    private void HandlePauseInput()
+    /// <summary>
+    /// Displays the main menu and pauses gameplay.
+    /// </summary>
+    public void ShowMainMenu()
     {
-        if (Input.GetKeyDown(KeyCode.Escape) && !isGameOver)
-        {
-            TogglePause();
-        }
-    }
-
-    private void HandleRestartInput()
-    {
-        if (isGameOver && Input.GetKeyDown(KeyCode.R))
-        {
-            RestartGame();
-        }
-    }
-
-    public void StartGame()
-    {
-        currentScore = startingScore;
+        isGameActive = false;
         isGameOver = false;
-        isPaused = false;
         Time.timeScale = 1f;
 
-        UpdateScoreUI();
+        if (playerController != null)
+            playerController.gameObject.SetActive(false);
 
-        if (UIManager.Instance != null)
+        if (uiManager != null)
         {
-            UIManager.Instance.HideGameOver();
-            UIManager.Instance.HidePauseMenu();
+            uiManager.ShowMainMenu(highScore);
         }
     }
 
+    /// <summary>
+    /// Starts a new game. Called from the main menu.
+    /// </summary>
+    public void StartGame()
+    {
+        FindReferences();
+
+        score = 0;
+        currentWave = 0;
+        isGameOver = false;
+        isGameActive = true;
+        Time.timeScale = 1f;
+
+        // Reset player
+        if (playerController != null)
+        {
+            playerController.gameObject.SetActive(true);
+            playerController.transform.position = new Vector3(0, -3.5f, 0);
+        }
+
+        // Clear existing enemies and bullets
+        ClearAllEntities();
+
+        if (uiManager != null)
+        {
+            uiManager.ShowGameHUD();
+            uiManager.UpdateScore(score);
+            uiManager.UpdateWave(currentWave);
+        }
+
+        if (enemySpawner != null)
+            enemySpawner.StartSpawning();
+    }
+
+    /// <summary>
+    /// Adds points to the score and updates UI.
+    /// </summary>
     public void AddScore(int points)
     {
-        if (isGameOver)
-            return;
+        if (!isGameActive) return;
 
-        currentScore += points;
-        UpdateScoreUI();
+        score += points;
+
+        if (uiManager != null)
+            uiManager.UpdateScore(score);
     }
 
-    private void UpdateScoreUI()
+    /// <summary>
+    /// Updates the displayed wave number.
+    /// </summary>
+    public void UpdateWave(int wave)
     {
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.UpdateScore(currentScore);
-        }
+        currentWave = wave;
+        if (uiManager != null)
+            uiManager.UpdateWave(wave);
     }
 
-    public void GameOver()
+    /// <summary>
+    /// Sets the player's max health for UI display.
+    /// </summary>
+    public void SetPlayerMaxHealth(int max)
     {
-        if (isGameOver)
-            return;
+        playerMaxHealth = max;
+        playerHealth = max;
+        if (uiManager != null)
+            uiManager.UpdateHealth(playerHealth, playerMaxHealth);
+    }
 
+    /// <summary>
+    /// Updates current player health in the UI.
+    /// </summary>
+    public void UpdatePlayerHealth(int health)
+    {
+        playerHealth = health;
+        if (uiManager != null)
+            uiManager.UpdateHealth(playerHealth, playerMaxHealth);
+    }
+
+    /// <summary>
+    /// Displays a temporary power-up pickup message.
+    /// </summary>
+    public void ShowPowerUpText(string text)
+    {
+        if (uiManager != null)
+            uiManager.ShowPowerUpText(text);
+    }
+
+    /// <summary>
+    /// Called when the player dies. Triggers game over sequence.
+    /// </summary>
+    public void OnPlayerDeath()
+    {
+        if (isGameOver) return;
         isGameOver = true;
-        Time.timeScale = 0f;
+        isGameActive = false;
 
-        // Save high score
-        int highScore = PlayerPrefs.GetInt("HighScore", 0);
-        if (currentScore > highScore)
+        // Update high score
+        if (score > highScore)
         {
-            PlayerPrefs.SetInt("HighScore", currentScore);
+            highScore = score;
+            PlayerPrefs.SetInt(HighScoreKey, highScore);
             PlayerPrefs.Save();
         }
 
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.ShowGameOver(currentScore, PlayerPrefs.GetInt("HighScore", 0));
-        }
+        if (enemySpawner != null)
+            enemySpawner.StopSpawning();
 
-        Debug.Log($"Game Over! Final Score: {currentScore}");
+        if (uiManager != null)
+            uiManager.ShowGameOver(score, highScore);
     }
 
+    /// <summary>
+    /// Restarts the game (called from Game Over screen).
+    /// </summary>
     public void RestartGame()
     {
-        Time.timeScale = 1f;
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
 
-    public void TogglePause()
+    /// <summary>
+    /// Returns to the main menu (called from Game Over screen).
+    /// </summary>
+    public void ReturnToMainMenu()
     {
-        isPaused = !isPaused;
-        Time.timeScale = isPaused ? 0f : 1f;
-
-        if (UIManager.Instance != null)
-        {
-            if (isPaused)
-            {
-                UIManager.Instance.ShowPauseMenu();
-            }
-            else
-            {
-                UIManager.Instance.HidePauseMenu();
-            }
-        }
+        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
 
+    /// <summary>
+    /// Quits the application.
+    /// </summary>
     public void QuitGame()
     {
-        Debug.Log("Quitting game...");
-        
-        #if UNITY_EDITOR
-            UnityEditor.EditorApplication.isPlaying = false;
-        #else
-            Application.Quit();
-        #endif
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+#else
+        Application.Quit();
+#endif
     }
 
-    private void OnDestroy()
+    /// <summary>
+    /// Destroys all active enemies, bullets, and power-ups.
+    /// </summary>
+    private void ClearAllEntities()
     {
-        if (Instance == this)
-        {
-            Instance = null;
-        }
+        foreach (GameObject go in GameObject.FindGameObjectsWithTag("Enemy"))
+            Destroy(go);
+        foreach (GameObject go in GameObject.FindGameObjectsWithTag("PlayerBullet"))
+            Destroy(go);
+        foreach (GameObject go in GameObject.FindGameObjectsWithTag("EnemyBullet"))
+            Destroy(go);
+        foreach (GameObject go in GameObject.FindGameObjectsWithTag("PowerUp"))
+            Destroy(go);
+
+        // Also destroy any explosions
+        foreach (ExplosionEffect e in FindObjectsOfType<ExplosionEffect>())
+            Destroy(e.gameObject);
     }
+
+    // Public getters
+    public int GetScore() => score;
+    public int GetHighScore() => highScore;
+    public int GetCurrentWave() => currentWave;
+    public bool IsGameActive() => isGameActive;
+    public bool IsGameOver() => isGameOver;
 }

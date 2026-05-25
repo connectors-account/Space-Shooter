@@ -4,9 +4,9 @@
 TagManager:
   serializedVersion: 2
   tags:
+  - Enemy
   - PlayerBullet
   - EnemyBullet
-  - Enemy
   - PowerUp
   layers:
   - Default
@@ -19,9 +19,9 @@ TagManager:
   -
   - Player
   - Enemy
-  - Bullet
+  - PlayerBullet
+  - EnemyBullet
   - PowerUp
-  - Background
   -
   -
   -
@@ -42,13 +42,13 @@ TagManager:
   -
   -
   m_SortingLayers:
-  - name: Background
-    uniqueID: 1
-    locked: 0
   - name: Default
     uniqueID: 0
     locked: 0
-  - name: Foreground
+  - name: Background
+    uniqueID: 1
+    locked: 0
+  - name: Gameplay
     uniqueID: 2
     locked: 0
   - name: UI
