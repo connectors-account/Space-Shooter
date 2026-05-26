@@ -1,68 +1,102 @@
 using UnityEngine;
 
 /// <summary>
-/// Controls bullet movement and behavior for both player and enemy bullets.
+/// Controls projectile physics and lifetime.
+/// Works for both player and enemy bullets — call Initialize(isPlayerBullet)
+/// after instantiation.
+/// Requires: Rigidbody2D (set to Kinematic), Collider2D (trigger).
 /// </summary>
+[RequireComponent(typeof(Rigidbody2D))]
 public class BulletController : MonoBehaviour
 {
     [Header("Bullet Settings")]
-    [SerializeField] private float speed = 12f;
-    [SerializeField] private float lifetime = 3f;
+    [SerializeField] private float speed = 15f;
+    [SerializeField] private float lifetime = 4f;
+    [SerializeField] private int damage = 25;
 
-    private Vector3 moveDirection = Vector3.up;
-    private bool isPlayerBullet = true;
+    [Header("Visual")]
+    [SerializeField] private Color playerBulletColor = Color.cyan;
+    [SerializeField] private Color enemyBulletColor = Color.red;
 
-    public bool IsPlayerBullet => isPlayerBullet;
+    private bool _isPlayerBullet;
+    private Rigidbody2D _rb;
+
+    // ────────────────────────────────────────────────────────────────────
+    // Initialization (called by the spawner after Instantiate)
+    // ────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Must be called immediately after Instantiate.
+    /// Sets direction, tag, and color.
+    /// </summary>
+    public void Initialize(bool isPlayerBullet, float speedOverride = -1f)
+    {
+        _isPlayerBullet = isPlayerBullet;
+
+        if (speedOverride > 0f)
+            speed = speedOverride;
+
+        // Tag so collision handlers can differentiate
+        gameObject.tag = _isPlayerBullet ? "PlayerBullet" : "EnemyBullet";
+
+        // Tint
+        SpriteRenderer sr = GetComponent<SpriteRenderer>();
+        if (sr != null)
+            sr.color = _isPlayerBullet ? playerBulletColor : enemyBulletColor;
+
+        // Set layer for physics filtering
+        gameObject.layer = LayerMask.NameToLayer(
+            _isPlayerBullet ? "PlayerBullet" : "EnemyBullet");
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // Unity Lifecycle
+    // ────────────────────────────────────────────────────────────────────
+    private void Awake()
+    {
+        _rb = GetComponent<Rigidbody2D>();
+        _rb.gravityScale = 0f;
+    }
 
     private void Start()
     {
-        // Destroy bullet after lifetime expires
+        // Direction is "up" relative to the bullet's rotation
+        _rb.linearVelocity = transform.up * speed;
+
+        // Auto-destroy after lifetime
         Destroy(gameObject, lifetime);
     }
 
-    private void Update()
+    // ────────────────────────────────────────────────────────────────────
+    // Collision
+    // ────────────────────────────────────────────────────────────────────
+    private void OnTriggerEnter2D(Collider2D other)
     {
-        Move();
-    }
-
-    private void Move()
-    {
-        transform.Translate(moveDirection * speed * Time.deltaTime, Space.World);
-    }
-
-    /// <summary>
-    /// Initialize the bullet with direction and ownership.
-    /// </summary>
-    /// <param name="playerBullet">True if fired by player, false if fired by enemy</param>
-    /// <param name="direction">Direction the bullet should travel</param>
-    public void Initialize(bool playerBullet, Vector3 direction)
-    {
-        isPlayerBullet = playerBullet;
-        moveDirection = direction.normalized;
-
-        // Set appropriate tag based on ownership
-        if (playerBullet)
+        if (_isPlayerBullet)
         {
-            gameObject.tag = "PlayerBullet";
+            // Player bullet hits enemy
+            if (other.CompareTag("Enemy"))
+            {
+                HealthSystem enemyHealth = other.GetComponent<HealthSystem>();
+                if (enemyHealth != null)
+                    enemyHealth.TakeDamage(damage);
+                Destroy(gameObject);
+            }
         }
         else
         {
-            gameObject.tag = "EnemyBullet";
-        }
-
-        // Rotate bullet to face movement direction
-        if (direction != Vector3.zero)
-        {
-            float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg - 90f;
-            transform.rotation = Quaternion.Euler(0f, 0f, angle);
+            // Enemy bullet hits player — handled in PlayerController
+            // Just destroy self on contact with player
+            if (other.CompareTag("Player"))
+            {
+                Destroy(gameObject);
+            }
         }
     }
 
-    /// <summary>
-    /// Set bullet speed.
-    /// </summary>
-    public void SetSpeed(float newSpeed)
-    {
-        speed = newSpeed;
-    }
+    // ────────────────────────────────────────────────────────────────────
+    // Properties
+    // ────────────────────────────────────────────────────────────────────
+    public int Damage => damage;
+    public bool IsPlayerBullet => _isPlayerBullet;
 }

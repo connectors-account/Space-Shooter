@@ -1,129 +1,197 @@
 using UnityEngine;
 
 /// <summary>
-/// Controls enemy ship behavior including movement, shooting, and health.
+/// Enemy AI controller. Supports multiple movement patterns and shooting.
+/// Requires: Rigidbody2D, Collider2D, HealthSystem.
 /// </summary>
+[RequireComponent(typeof(Rigidbody2D))]
+[RequireComponent(typeof(HealthSystem))]
 public class EnemyController : MonoBehaviour
 {
-    [Header("Movement Settings")]
-    [SerializeField] private float moveSpeed = 3f;
-    [SerializeField] private float horizontalMovement = 0f;
+    // ── Movement Patterns ───────────────────────────────────────────────
+    public enum MovementPattern { StraightDown, Zigzag, Sine, Dive }
 
-    [Header("Shooting Settings")]
+    [Header("Movement")]
+    [SerializeField] private MovementPattern pattern = MovementPattern.StraightDown;
+    [SerializeField] private float moveSpeed = 3f;
+    [SerializeField] private float zigzagAmplitude = 3f;
+    [SerializeField] private float zigzagFrequency = 2f;
+
+    [Header("Shooting")]
     [SerializeField] private GameObject bulletPrefab;
-    [SerializeField] private float fireRate = 2f;
+    [SerializeField] private Transform firePoint;
+    [SerializeField] private float fireRate = 1.5f;
+    [SerializeField] private float fireRateVariance = 0.5f;
     [SerializeField] private bool canShoot = true;
 
-    [Header("Health & Score")]
-    [SerializeField] private int maxHealth = 1;
+    [Header("Scoring")]
     [SerializeField] private int scoreValue = 100;
 
-    [Header("Boundaries")]
-    [SerializeField] private float destroyY = -6f;
+    [Header("Drops")]
+    [SerializeField] private GameObject[] possibleDrops;
+    [SerializeField, Range(0f, 1f)] private float dropChance = 0.15f;
 
-    private int currentHealth;
-    private float nextFireTime;
+    // ── Internals ───────────────────────────────────────────────────────
+    private Rigidbody2D _rb;
+    private HealthSystem _health;
+    private float _nextFireTime;
+    private float _spawnX;
+    private float _aliveTime;
+    private Transform _playerTransform;
 
-    public int MaxHealth => maxHealth;
-    public int ScoreValue => scoreValue;
+    // ────────────────────────────────────────────────────────────────────
+    // Unity Lifecycle
+    // ────────────────────────────────────────────────────────────────────
+    private void Awake()
+    {
+        _rb = GetComponent<Rigidbody2D>();
+        _health = GetComponent<HealthSystem>();
+        _rb.gravityScale = 0f;
+        _rb.freezeRotation = true;
+    }
 
     private void Start()
     {
-        currentHealth = maxHealth;
-        nextFireTime = Time.time + Random.Range(0.5f, fireRate);
-        
-        // Add slight random horizontal movement variation
-        horizontalMovement = Random.Range(-0.5f, 0.5f);
+        _spawnX = transform.position.x;
+        _health.OnDeath += HandleDeath;
+
+        // Randomize first shot
+        _nextFireTime = Time.time + Random.Range(0.5f, fireRate);
+
+        // Cache player reference
+        GameObject player = GameObject.FindGameObjectWithTag("Player");
+        if (player != null)
+            _playerTransform = player.transform;
+
+        // Set tag
+        gameObject.tag = "Enemy";
     }
 
     private void Update()
     {
-        if (GameManager.Instance != null && GameManager.Instance.IsGameOver)
+        if (GameManager.Instance != null &&
+            GameManager.Instance.CurrentState != GameManager.GameState.Playing)
             return;
+
+        _aliveTime += Time.deltaTime;
+
+        if (canShoot && Time.time >= _nextFireTime)
+            Shoot();
+    }
+
+    private void FixedUpdate()
+    {
+        if (GameManager.Instance != null &&
+            GameManager.Instance.CurrentState != GameManager.GameState.Playing)
+        {
+            _rb.linearVelocity = Vector2.zero;
+            return;
+        }
 
         Move();
-        HandleShooting();
-        CheckBounds();
+        DestroyIfOutOfBounds();
     }
 
+    private void OnDestroy()
+    {
+        if (_health != null)
+            _health.OnDeath -= HandleDeath;
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // Movement
+    // ────────────────────────────────────────────────────────────────────
     private void Move()
     {
-        Vector3 movement = new Vector3(horizontalMovement, -1f, 0f).normalized * moveSpeed * Time.deltaTime;
-        transform.Translate(movement, Space.World);
-    }
+        Vector2 vel = Vector2.zero;
 
-    private void HandleShooting()
-    {
-        if (!canShoot || bulletPrefab == null)
-            return;
-
-        if (Time.time >= nextFireTime)
+        switch (pattern)
         {
-            Shoot();
-            nextFireTime = Time.time + fireRate + Random.Range(-0.5f, 0.5f);
+            case MovementPattern.StraightDown:
+                vel = Vector2.down * moveSpeed;
+                break;
+
+            case MovementPattern.Zigzag:
+                float xOffset = Mathf.Sin(_aliveTime * zigzagFrequency) * zigzagAmplitude;
+                vel = new Vector2(xOffset, -moveSpeed);
+                break;
+
+            case MovementPattern.Sine:
+                float sineX = Mathf.Cos(_aliveTime * zigzagFrequency) * zigzagAmplitude;
+                vel = new Vector2(sineX, -moveSpeed);
+                break;
+
+            case MovementPattern.Dive:
+                if (_playerTransform != null)
+                {
+                    Vector2 dir = ((Vector2)_playerTransform.position - _rb.position).normalized;
+                    vel = dir * moveSpeed * 1.2f;
+                }
+                else
+                {
+                    vel = Vector2.down * moveSpeed;
+                }
+                break;
         }
+
+        _rb.linearVelocity = vel;
     }
 
+    // ────────────────────────────────────────────────────────────────────
+    // Shooting
+    // ────────────────────────────────────────────────────────────────────
     private void Shoot()
     {
-        Vector3 spawnPosition = transform.position + Vector3.down * 0.5f;
-        GameObject bullet = Instantiate(bulletPrefab, spawnPosition, Quaternion.identity);
-        
-        BulletController bulletController = bullet.GetComponent<BulletController>();
-        if (bulletController != null)
-        {
-            bulletController.Initialize(false, Vector3.down);
-        }
+        if (bulletPrefab == null) return;
+
+        Vector3 spawnPos = firePoint != null ? firePoint.position : transform.position;
+        GameObject bullet = Instantiate(bulletPrefab, spawnPos,
+            Quaternion.Euler(0, 0, 180)); // face downward
+
+        BulletController bc = bullet.GetComponent<BulletController>();
+        if (bc != null)
+            bc.Initialize(false);
+
+        _nextFireTime = Time.time + fireRate + Random.Range(-fireRateVariance, fireRateVariance);
     }
 
-    private void CheckBounds()
+    // ────────────────────────────────────────────────────────────────────
+    // Death
+    // ────────────────────────────────────────────────────────────────────
+    private void HandleDeath()
     {
-        if (transform.position.y < destroyY)
+        GameManager.Instance?.AddScore(scoreValue);
+        TryDropItem();
+    }
+
+    private void TryDropItem()
+    {
+        if (possibleDrops == null || possibleDrops.Length == 0) return;
+        if (Random.value > dropChance) return;
+
+        int idx = Random.Range(0, possibleDrops.Length);
+        if (possibleDrops[idx] != null)
+            Instantiate(possibleDrops[idx], transform.position, Quaternion.identity);
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // Bounds
+    // ────────────────────────────────────────────────────────────────────
+    private void DestroyIfOutOfBounds()
+    {
+        if (transform.position.y < -8f || transform.position.y > 12f ||
+            Mathf.Abs(transform.position.x) > 12f)
         {
             Destroy(gameObject);
         }
     }
 
-    public void TakeDamage(int damage)
+    // ────────────────────────────────────────────────────────────────────
+    // Configuration (called by EnemySpawner)
+    // ────────────────────────────────────────────────────────────────────
+    public void Configure(MovementPattern newPattern, float speedMultiplier)
     {
-        currentHealth -= damage;
-        
-        if (currentHealth <= 0)
-        {
-            Die();
-        }
-    }
-
-    private void Die()
-    {
-        // Add score
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.AddScore(scoreValue);
-        }
-
-        Destroy(gameObject);
-    }
-
-    private void OnTriggerEnter2D(Collider2D other)
-    {
-        // Handle collision with player bullet
-        if (other.CompareTag("PlayerBullet"))
-        {
-            TakeDamage(1);
-            Destroy(other.gameObject);
-        }
-    }
-
-    /// <summary>
-    /// Configure enemy properties (called by spawner)
-    /// </summary>
-    public void Configure(float speed, int health, int score, bool shooting)
-    {
-        moveSpeed = speed;
-        maxHealth = health;
-        currentHealth = health;
-        scoreValue = score;
-        canShoot = shooting;
+        pattern = newPattern;
+        moveSpeed *= speedMultiplier;
     }
 }
