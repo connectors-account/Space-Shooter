@@ -2,161 +2,142 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Manages overall game state, score, and game flow.
+/// Singleton GameManager that controls game state, scoring, wave progression,
+/// and coordinates all other managers. Persists across the gameplay scene.
 /// </summary>
 public class GameManager : MonoBehaviour
 {
     public static GameManager Instance { get; private set; }
 
-    [Header("Game Settings")]
-    [SerializeField] private int startingScore = 0;
+    // ── Game State ──────────────────────────────────────────────────────
+    public enum GameState { MainMenu, Playing, Paused, GameOver }
+    public GameState CurrentState { get; private set; } = GameState.MainMenu;
 
-    private int currentScore;
-    private bool isGameOver = false;
-    private bool isPaused = false;
+    // ── Score ───────────────────────────────────────────────────────────
+    public int Score { get; private set; }
+    public int HighScore { get; private set; }
 
-    public int CurrentScore => currentScore;
-    public bool IsGameOver => isGameOver;
-    public bool IsPaused => isPaused;
+    // ── Wave tracking ───────────────────────────────────────────────────
+    public int CurrentWave { get; private set; }
 
+    // ── Events (other scripts subscribe) ────────────────────────────────
+    public System.Action<int> OnScoreChanged;
+    public System.Action<GameState> OnGameStateChanged;
+    public System.Action<int> OnWaveChanged;
+
+    // ── Settings ────────────────────────────────────────────────────────
+    [Header("Gameplay")]
+    [Tooltip("Seconds of invincibility after respawn")]
+    public float respawnInvincibilityTime = 2f;
+
+    [Tooltip("Total player lives before game over")]
+    public int startingLives = 3;
+
+    private int _livesRemaining;
+    public int LivesRemaining => _livesRemaining;
+
+    // ────────────────────────────────────────────────────────────────────
+    // Unity Lifecycle
+    // ────────────────────────────────────────────────────────────────────
     private void Awake()
     {
-        // Singleton pattern
-        if (Instance == null)
-        {
-            Instance = this;
-        }
-        else
+        if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
             return;
         }
-    }
+        Instance = this;
 
-    private void Start()
-    {
-        StartGame();
-    }
-
-    private void Update()
-    {
-        HandlePauseInput();
-        HandleRestartInput();
-    }
-
-    private void HandlePauseInput()
-    {
-        if (Input.GetKeyDown(KeyCode.Escape) && !isGameOver)
-        {
-            TogglePause();
-        }
-    }
-
-    private void HandleRestartInput()
-    {
-        if (isGameOver && Input.GetKeyDown(KeyCode.R))
-        {
-            RestartGame();
-        }
-    }
-
-    public void StartGame()
-    {
-        currentScore = startingScore;
-        isGameOver = false;
-        isPaused = false;
-        Time.timeScale = 1f;
-
-        UpdateScoreUI();
-
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.HideGameOver();
-            UIManager.Instance.HidePauseMenu();
-        }
-    }
-
-    public void AddScore(int points)
-    {
-        if (isGameOver)
-            return;
-
-        currentScore += points;
-        UpdateScoreUI();
-    }
-
-    private void UpdateScoreUI()
-    {
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.UpdateScore(currentScore);
-        }
-    }
-
-    public void GameOver()
-    {
-        if (isGameOver)
-            return;
-
-        isGameOver = true;
-        Time.timeScale = 0f;
-
-        // Save high score
-        int highScore = PlayerPrefs.GetInt("HighScore", 0);
-        if (currentScore > highScore)
-        {
-            PlayerPrefs.SetInt("HighScore", currentScore);
-            PlayerPrefs.Save();
-        }
-
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.ShowGameOver(currentScore, PlayerPrefs.GetInt("HighScore", 0));
-        }
-
-        Debug.Log($"Game Over! Final Score: {currentScore}");
-    }
-
-    public void RestartGame()
-    {
-        Time.timeScale = 1f;
-        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
-    }
-
-    public void TogglePause()
-    {
-        isPaused = !isPaused;
-        Time.timeScale = isPaused ? 0f : 1f;
-
-        if (UIManager.Instance != null)
-        {
-            if (isPaused)
-            {
-                UIManager.Instance.ShowPauseMenu();
-            }
-            else
-            {
-                UIManager.Instance.HidePauseMenu();
-            }
-        }
-    }
-
-    public void QuitGame()
-    {
-        Debug.Log("Quitting game...");
-        
-        #if UNITY_EDITOR
-            UnityEditor.EditorApplication.isPlaying = false;
-        #else
-            Application.Quit();
-        #endif
+        HighScore = PlayerPrefs.GetInt("HighScore", 0);
     }
 
     private void OnDestroy()
     {
-        if (Instance == this)
+        if (Instance == this) Instance = null;
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // Public API
+    // ────────────────────────────────────────────────────────────────────
+
+    /// <summary>Start a new game session.</summary>
+    public void StartGame()
+    {
+        Score = 0;
+        CurrentWave = 0;
+        _livesRemaining = startingLives;
+        Time.timeScale = 1f;
+        SetState(GameState.Playing);
+        OnScoreChanged?.Invoke(Score);
+    }
+
+    /// <summary>Add points and fire the score-changed event.</summary>
+    public void AddScore(int points)
+    {
+        if (CurrentState != GameState.Playing) return;
+        Score += points;
+        if (Score > HighScore)
         {
-            Instance = null;
+            HighScore = Score;
+            PlayerPrefs.SetInt("HighScore", HighScore);
+            PlayerPrefs.Save();
         }
+        OnScoreChanged?.Invoke(Score);
+    }
+
+    /// <summary>Advance to the next wave.</summary>
+    public void AdvanceWave()
+    {
+        CurrentWave++;
+        OnWaveChanged?.Invoke(CurrentWave);
+    }
+
+    /// <summary>Call when the player ship is destroyed.</summary>
+    public void PlayerDied()
+    {
+        _livesRemaining--;
+        if (_livesRemaining <= 0)
+        {
+            SetState(GameState.GameOver);
+        }
+    }
+
+    /// <summary>Toggle pause.</summary>
+    public void TogglePause()
+    {
+        if (CurrentState == GameState.Playing)
+        {
+            Time.timeScale = 0f;
+            SetState(GameState.Paused);
+        }
+        else if (CurrentState == GameState.Paused)
+        {
+            Time.timeScale = 1f;
+            SetState(GameState.Playing);
+        }
+    }
+
+    /// <summary>Return to main menu.</summary>
+    public void ReturnToMainMenu()
+    {
+        Time.timeScale = 1f;
+        SetState(GameState.MainMenu);
+    }
+
+    /// <summary>Reload the current scene (quick restart).</summary>
+    public void RestartGame()
+    {
+        Time.timeScale = 1f;
+        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+        // StartGame() should be called from the scene's initialization
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // Internal
+    // ────────────────────────────────────────────────────────────────────
+    private void SetState(GameState newState)
+    {
+        CurrentState = newState;
+        OnGameStateChanged?.Invoke(newState);
     }
 }
