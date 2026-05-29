@@ -85,7 +85,7 @@ public class PlayerController : MonoBehaviour
         float vertical = Input.GetAxisRaw("Vertical");
 
         Vector2 movement = new Vector2(horizontal, vertical).normalized;
-        rb.linearVelocity = movement * moveSpeed;
+        rb.velocity = movement * moveSpeed;
     }
 
     void ClampPosition()
