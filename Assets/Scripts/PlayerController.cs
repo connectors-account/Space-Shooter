@@ -1,172 +1,213 @@
 using UnityEngine;
 
 /// <summary>
-/// Controls the player ship movement, shooting, and health management.
+/// Controls player ship movement, shooting, and power-up states.
+/// Attach to the Player GameObject with a Rigidbody2D and Collider2D.
 /// </summary>
+[RequireComponent(typeof(Rigidbody2D))]
+[RequireComponent(typeof(HealthSystem))]
 public class PlayerController : MonoBehaviour
 {
-    [Header("Movement Settings")]
+    [Header("Movement")]
     [SerializeField] private float moveSpeed = 8f;
-    [SerializeField] private float horizontalBoundary = 8f;
-    [SerializeField] private float verticalBoundaryTop = 4f;
-    [SerializeField] private float verticalBoundaryBottom = -4f;
+    [SerializeField] private float boundaryX = 8.5f;
+    [SerializeField] private float boundaryYTop = 4.5f;
+    [SerializeField] private float boundaryYBottom = -4.5f;
 
-    [Header("Shooting Settings")]
+    [Header("Shooting")]
     [SerializeField] private GameObject bulletPrefab;
     [SerializeField] private Transform firePoint;
     [SerializeField] private float fireRate = 0.25f;
+    [SerializeField] private float rapidFireRate = 0.1f;
+    [SerializeField] private float bulletSpeed = 12f;
 
-    [Header("Health Settings")]
-    [SerializeField] private int maxHealth = 3;
+    [Header("Visual Feedback")]
+    [SerializeField] private SpriteRenderer spriteRenderer;
+    [SerializeField] private Color damageFlashColor = Color.red;
+    [SerializeField] private Color shieldColor = Color.cyan;
 
-    private int currentHealth;
+    private Rigidbody2D rb;
+    private HealthSystem healthSystem;
     private float nextFireTime = 0f;
-    private bool canControl = true;
+    private bool isRapidFire = false;
+    private float rapidFireTimer = 0f;
+    private Color originalColor;
+    private float flashTimer = 0f;
+    private bool isFlashing = false;
 
-    public int CurrentHealth => currentHealth;
-    public int MaxHealth => maxHealth;
+    // Shield visual child object
+    private GameObject shieldVisual;
+
+    private void Awake()
+    {
+        rb = GetComponent<Rigidbody2D>();
+        healthSystem = GetComponent<HealthSystem>();
+
+        if (spriteRenderer == null)
+            spriteRenderer = GetComponent<SpriteRenderer>();
+
+        if (spriteRenderer != null)
+            originalColor = spriteRenderer.color;
+    }
 
     private void Start()
     {
-        currentHealth = maxHealth;
-        UpdateHealthUI();
+        rb.gravityScale = 0f;
+        rb.freezeRotation = true;
+
+        healthSystem.OnDamageTaken += HandleDamageTaken;
+        healthSystem.OnDeath += HandleDeath;
+        healthSystem.OnShieldBroken += HandleShieldBroken;
+
+        // Create shield visual
+        shieldVisual = new GameObject("ShieldVisual");
+        shieldVisual.transform.SetParent(transform);
+        shieldVisual.transform.localPosition = Vector3.zero;
+        var shieldSr = shieldVisual.AddComponent<SpriteRenderer>();
+        shieldSr.color = new Color(0f, 1f, 1f, 0.3f);
+        shieldSr.sortingOrder = 5;
+        shieldVisual.transform.localScale = Vector3.one * 1.5f;
+        shieldVisual.SetActive(false);
     }
 
     private void Update()
     {
-        if (!canControl || GameManager.Instance == null || GameManager.Instance.IsGameOver)
-            return;
-
-        HandleMovement();
         HandleShooting();
+        HandlePowerUpTimers();
+        HandleFlash();
+        UpdateShieldVisual();
+    }
+
+    private void FixedUpdate()
+    {
+        HandleMovement();
     }
 
     private void HandleMovement()
     {
-        float horizontalInput = Input.GetAxis("Horizontal");
-        float verticalInput = Input.GetAxis("Vertical");
+        float horizontal = Input.GetAxisRaw("Horizontal");
+        float vertical = Input.GetAxisRaw("Vertical");
 
-        // WASD and Arrow keys are both mapped to Horizontal/Vertical by default in Unity
-        Vector3 movement = new Vector3(horizontalInput, verticalInput, 0f) * moveSpeed * Time.deltaTime;
-        transform.Translate(movement, Space.World);
+        Vector2 movement = new Vector2(horizontal, vertical).normalized * moveSpeed;
+        rb.linearVelocity = movement;
 
-        // Clamp position to screen boundaries
-        float clampedX = Mathf.Clamp(transform.position.x, -horizontalBoundary, horizontalBoundary);
-        float clampedY = Mathf.Clamp(transform.position.y, verticalBoundaryBottom, verticalBoundaryTop);
-        transform.position = new Vector3(clampedX, clampedY, transform.position.z);
+        // Clamp position within boundaries
+        Vector3 pos = transform.position;
+        pos.x = Mathf.Clamp(pos.x, -boundaryX, boundaryX);
+        pos.y = Mathf.Clamp(pos.y, boundaryYBottom, boundaryYTop);
+        transform.position = pos;
     }
 
     private void HandleShooting()
     {
         if (Input.GetKey(KeyCode.Space) && Time.time >= nextFireTime)
         {
-            Shoot();
-            nextFireTime = Time.time + fireRate;
+            float currentFireRate = isRapidFire ? rapidFireRate : fireRate;
+            nextFireTime = Time.time + currentFireRate;
+            FireBullet();
         }
     }
 
-    private void Shoot()
+    private void FireBullet()
     {
-        if (bulletPrefab == null)
+        if (bulletPrefab == null) return;
+
+        Vector3 spawnPos = firePoint != null ? firePoint.position : transform.position + Vector3.up * 0.6f;
+
+        GameObject bullet = Instantiate(bulletPrefab, spawnPos, Quaternion.identity);
+        BulletController bc = bullet.GetComponent<BulletController>();
+        if (bc != null)
         {
-            Debug.LogWarning("Bullet prefab not assigned to PlayerController!");
-            return;
+            bc.Initialize(Vector2.up, bulletSpeed, true);
         }
 
-        Vector3 spawnPosition = firePoint != null ? firePoint.position : transform.position + Vector3.up * 0.5f;
-        GameObject bullet = Instantiate(bulletPrefab, spawnPosition, Quaternion.identity);
-        
-        BulletController bulletController = bullet.GetComponent<BulletController>();
-        if (bulletController != null)
-        {
-            bulletController.Initialize(true, Vector3.up);
-        }
+        AudioManager.Instance?.PlaySFX("PlayerShoot");
     }
 
-    public void TakeDamage(int damage)
+    private void HandlePowerUpTimers()
     {
-        currentHealth -= damage;
-        currentHealth = Mathf.Max(currentHealth, 0);
-        
-        UpdateHealthUI();
-
-        if (currentHealth <= 0)
+        if (isRapidFire)
         {
-            Die();
-        }
-    }
-
-    private void UpdateHealthUI()
-    {
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.UpdateHealth(currentHealth, maxHealth);
-        }
-    }
-
-    private void Die()
-    {
-        canControl = false;
-        
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.GameOver();
-        }
-
-        // Visual feedback - disable renderer instead of destroying
-        SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null)
-        {
-            spriteRenderer.enabled = false;
-        }
-
-        // Disable collider
-        Collider2D col = GetComponent<Collider2D>();
-        if (col != null)
-        {
-            col.enabled = false;
-        }
-    }
-
-    private void OnTriggerEnter2D(Collider2D other)
-    {
-        // Handle collision with enemy
-        if (other.CompareTag("Enemy"))
-        {
-            TakeDamage(1);
-            
-            EnemyController enemy = other.GetComponent<EnemyController>();
-            if (enemy != null)
+            rapidFireTimer -= Time.deltaTime;
+            if (rapidFireTimer <= 0f)
             {
-                enemy.TakeDamage(enemy.MaxHealth); // Destroy enemy on collision
+                isRapidFire = false;
             }
         }
-        // Handle collision with enemy bullet
-        else if (other.CompareTag("EnemyBullet"))
+    }
+
+    private void HandleFlash()
+    {
+        if (isFlashing && spriteRenderer != null)
         {
-            TakeDamage(1);
-            Destroy(other.gameObject);
+            flashTimer -= Time.deltaTime;
+            if (flashTimer <= 0f)
+            {
+                spriteRenderer.color = originalColor;
+                isFlashing = false;
+            }
         }
     }
 
-    public void ResetPlayer()
+    private void UpdateShieldVisual()
     {
-        currentHealth = maxHealth;
-        canControl = true;
-        transform.position = new Vector3(0f, -3f, 0f);
-        
-        SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
+        if (shieldVisual != null)
+        {
+            shieldVisual.SetActive(healthSystem.HasShield);
+        }
+    }
+
+    private void HandleDamageTaken()
+    {
         if (spriteRenderer != null)
         {
-            spriteRenderer.enabled = true;
+            spriteRenderer.color = damageFlashColor;
+            isFlashing = true;
+            flashTimer = 0.15f;
         }
+        AudioManager.Instance?.PlaySFX("PlayerHit");
+    }
 
-        Collider2D col = GetComponent<Collider2D>();
-        if (col != null)
+    private void HandleDeath()
+    {
+        AudioManager.Instance?.PlaySFX("PlayerDeath");
+        GameManager.Instance?.GameOver();
+    }
+
+    private void HandleShieldBroken()
+    {
+        AudioManager.Instance?.PlaySFX("ShieldBreak");
+    }
+
+    // Power-up application methods (called by PowerUpController)
+    public void ActivateRapidFire(float duration)
+    {
+        isRapidFire = true;
+        rapidFireTimer = duration;
+    }
+
+    public void HealPlayer(int amount)
+    {
+        healthSystem.Heal(amount);
+    }
+
+    public void ActivateShield()
+    {
+        healthSystem.ActivateShield();
+    }
+
+    public HealthSystem GetHealthSystem()
+    {
+        return healthSystem;
+    }
+
+    private void OnDestroy()
+    {
+        if (healthSystem != null)
         {
-            col.enabled = true;
+            healthSystem.OnDamageTaken -= HandleDamageTaken;
+            healthSystem.OnDeath -= HandleDeath;
+            healthSystem.OnShieldBroken -= HandleShieldBroken;
         }
-
-        UpdateHealthUI();
     }
 }
