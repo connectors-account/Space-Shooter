@@ -1,172 +1,255 @@
 using UnityEngine;
 
 /// <summary>
-/// Controls the player ship movement, shooting, and health management.
+/// Player ship — movement, shooting, health, power-up handling.
+/// Attach to the Player prefab (Sprite + Rigidbody2D + BoxCollider2D isTrigger).
+/// Tag the GameObject as "Player".
 /// </summary>
+[RequireComponent(typeof(Rigidbody2D))]
 public class PlayerController : MonoBehaviour
 {
-    [Header("Movement Settings")]
-    [SerializeField] private float moveSpeed = 8f;
-    [SerializeField] private float horizontalBoundary = 8f;
-    [SerializeField] private float verticalBoundaryTop = 4f;
-    [SerializeField] private float verticalBoundaryBottom = -4f;
+    public static PlayerController Instance { get; private set; }
 
-    [Header("Shooting Settings")]
-    [SerializeField] private GameObject bulletPrefab;
-    [SerializeField] private Transform firePoint;
-    [SerializeField] private float fireRate = 0.25f;
+    [Header("Movement")]
+    public float moveSpeed = 8f;
 
-    [Header("Health Settings")]
-    [SerializeField] private int maxHealth = 3;
+    [Header("Boundaries (viewport 0-1)")]
+    public float minX = 0.05f;
+    public float maxX = 0.95f;
+    public float minY = 0.05f;
+    public float maxY = 0.95f;
 
-    private int currentHealth;
-    private float nextFireTime = 0f;
-    private bool canControl = true;
+    [Header("Shooting")]
+    public GameObject bulletPrefab;
+    public Transform firePoint;
+    public float fireRate = 0.25f;
+    public float bulletSpeed = 12f;
 
-    public int CurrentHealth => currentHealth;
-    public int MaxHealth => maxHealth;
+    [Header("Health")]
+    public int maxHealth = 100;
 
-    private void Start()
+    [Header("Power-up Durations")]
+    public float rapidFireDuration = 5f;
+    public float shieldDuration = 6f;
+
+    // ── Runtime ──
+    public int CurrentHealth { get; private set; }
+    public bool HasShield { get; private set; }
+    public bool HasRapidFire { get; private set; }
+
+    Rigidbody2D rb;
+    float nextFireTime;
+    float shieldTimer;
+    float rapidFireTimer;
+    float rapidFireRate = 0.08f;
+    Camera cam;
+
+    // Visual feedback objects (optional — created at runtime if sprites exist)
+    GameObject shieldVisual;
+
+    void Awake()
     {
-        currentHealth = maxHealth;
-        UpdateHealthUI();
+        Instance = this;
+        rb = GetComponent<Rigidbody2D>();
+        rb.gravityScale = 0f;
+        rb.freezeRotation = true;
+        cam = Camera.main;
+        CurrentHealth = maxHealth;
     }
 
-    private void Update()
+    void OnEnable()
     {
-        if (!canControl || GameManager.Instance == null || GameManager.Instance.IsGameOver)
-            return;
+        // Subscribe to game start
+        if (GameManager.Instance != null)
+            GameManager.Instance.OnGameStarted += ResetPlayer;
+    }
+
+    void OnDisable()
+    {
+        if (GameManager.Instance != null)
+            GameManager.Instance.OnGameStarted -= ResetPlayer;
+    }
+
+    void ResetPlayer()
+    {
+        CurrentHealth = maxHealth;
+        HasShield = false;
+        HasRapidFire = false;
+        transform.position = new Vector3(0f, -3.5f, 0f);
+        gameObject.SetActive(true);
+    }
+
+    void Update()
+    {
+        if (GameManager.Instance == null || !GameManager.Instance.IsPlaying || GameManager.Instance.IsGameOver) return;
 
         HandleMovement();
         HandleShooting();
+        HandlePowerUpTimers();
     }
 
-    private void HandleMovement()
+    void HandleMovement()
     {
-        float horizontalInput = Input.GetAxis("Horizontal");
-        float verticalInput = Input.GetAxis("Vertical");
+        float h = Input.GetAxisRaw("Horizontal");
+        float v = Input.GetAxisRaw("Vertical");
+        Vector2 move = new Vector2(h, v).normalized * moveSpeed;
+        rb.linearVelocity = move;
 
-        // WASD and Arrow keys are both mapped to Horizontal/Vertical by default in Unity
-        Vector3 movement = new Vector3(horizontalInput, verticalInput, 0f) * moveSpeed * Time.deltaTime;
-        transform.Translate(movement, Space.World);
-
-        // Clamp position to screen boundaries
-        float clampedX = Mathf.Clamp(transform.position.x, -horizontalBoundary, horizontalBoundary);
-        float clampedY = Mathf.Clamp(transform.position.y, verticalBoundaryBottom, verticalBoundaryTop);
-        transform.position = new Vector3(clampedX, clampedY, transform.position.z);
+        // Clamp to screen bounds
+        Vector3 pos = transform.position;
+        Vector3 minWorld = cam.ViewportToWorldPoint(new Vector3(minX, minY, 0));
+        Vector3 maxWorld = cam.ViewportToWorldPoint(new Vector3(maxX, maxY, 0));
+        pos.x = Mathf.Clamp(pos.x, minWorld.x, maxWorld.x);
+        pos.y = Mathf.Clamp(pos.y, minWorld.y, maxWorld.y);
+        transform.position = pos;
     }
 
-    private void HandleShooting()
+    void HandleShooting()
     {
-        if (Input.GetKey(KeyCode.Space) && Time.time >= nextFireTime)
+        if (Input.GetKey(KeyCode.Space) || Input.GetKey(KeyCode.Z))
         {
-            Shoot();
-            nextFireTime = Time.time + fireRate;
+            float rate = HasRapidFire ? rapidFireRate : fireRate;
+            if (Time.time >= nextFireTime)
+            {
+                nextFireTime = Time.time + rate;
+                Fire();
+            }
         }
     }
 
-    private void Shoot()
+    void Fire()
     {
-        if (bulletPrefab == null)
+        if (bulletPrefab == null) return;
+        Vector3 spawnPos = firePoint != null ? firePoint.position : transform.position + Vector3.up * 0.6f;
+        GameObject b = Instantiate(bulletPrefab, spawnPos, Quaternion.identity);
+        Bullet bullet = b.GetComponent<Bullet>();
+        if (bullet != null)
         {
-            Debug.LogWarning("Bullet prefab not assigned to PlayerController!");
-            return;
+            bullet.Init(Vector2.up, bulletSpeed, true);
         }
+        SoundManager.Instance?.PlaySFX("PlayerShoot");
+    }
 
-        Vector3 spawnPosition = firePoint != null ? firePoint.position : transform.position + Vector3.up * 0.5f;
-        GameObject bullet = Instantiate(bulletPrefab, spawnPosition, Quaternion.identity);
-        
-        BulletController bulletController = bullet.GetComponent<BulletController>();
-        if (bulletController != null)
+    void HandlePowerUpTimers()
+    {
+        if (HasRapidFire)
         {
-            bulletController.Initialize(true, Vector3.up);
+            rapidFireTimer -= Time.deltaTime;
+            if (rapidFireTimer <= 0f) HasRapidFire = false;
+        }
+        if (HasShield)
+        {
+            shieldTimer -= Time.deltaTime;
+            if (shieldTimer <= 0f)
+            {
+                HasShield = false;
+                if (shieldVisual != null) shieldVisual.SetActive(false);
+            }
         }
     }
 
-    public void TakeDamage(int damage)
+    // ── Power-up activation ──
+    public void ActivateRapidFire()
     {
-        currentHealth -= damage;
-        currentHealth = Mathf.Max(currentHealth, 0);
-        
-        UpdateHealthUI();
+        HasRapidFire = true;
+        rapidFireTimer = rapidFireDuration;
+    }
 
-        if (currentHealth <= 0)
+    public void ActivateShield()
+    {
+        HasShield = true;
+        shieldTimer = shieldDuration;
+        // Visual: create a circle around player
+        if (shieldVisual == null)
         {
+            shieldVisual = new GameObject("ShieldVisual");
+            shieldVisual.transform.SetParent(transform);
+            shieldVisual.transform.localPosition = Vector3.zero;
+            var sr = shieldVisual.AddComponent<SpriteRenderer>();
+            sr.sprite = CreateCircleSprite();
+            sr.color = new Color(0.3f, 0.7f, 1f, 0.35f);
+            sr.sortingOrder = 5;
+            shieldVisual.transform.localScale = Vector3.one * 2.5f;
+        }
+        shieldVisual.SetActive(true);
+    }
+
+    public void Heal(int amount)
+    {
+        CurrentHealth = Mathf.Min(CurrentHealth + amount, maxHealth);
+    }
+
+    // ── Damage ──
+    public void TakeDamage(int amount)
+    {
+        if (HasShield) return; // shield absorbs all damage
+
+        CurrentHealth -= amount;
+        SoundManager.Instance?.PlaySFX("PlayerHit");
+
+        if (CurrentHealth <= 0)
+        {
+            CurrentHealth = 0;
             Die();
         }
     }
 
-    private void UpdateHealthUI()
+    void Die()
     {
-        if (UIManager.Instance != null)
+        SoundManager.Instance?.PlaySFX("Explosion");
+        GameManager.Instance?.LoseLife();
+
+        if (GameManager.Instance != null && !GameManager.Instance.IsGameOver)
         {
-            UIManager.Instance.UpdateHealth(currentHealth, maxHealth);
+            // Respawn after delay
+            CurrentHealth = maxHealth;
+            HasShield = false;
+            HasRapidFire = false;
+            transform.position = new Vector3(0f, -3.5f, 0f);
+            // Brief invincibility via shield
+            ActivateShield();
+            shieldTimer = 2f; // short grace period
+        }
+        else
+        {
+            gameObject.SetActive(false);
         }
     }
 
-    private void Die()
+    void OnTriggerEnter2D(Collider2D other)
     {
-        canControl = false;
-        
-        if (GameManager.Instance != null)
+        if (other.CompareTag("EnemyBullet"))
         {
-            GameManager.Instance.GameOver();
+            TakeDamage(10);
+            Destroy(other.gameObject);
         }
-
-        // Visual feedback - disable renderer instead of destroying
-        SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null)
+        else if (other.CompareTag("Enemy"))
         {
-            spriteRenderer.enabled = false;
+            TakeDamage(25);
         }
-
-        // Disable collider
-        Collider2D col = GetComponent<Collider2D>();
-        if (col != null)
+        else if (other.CompareTag("PowerUp"))
         {
-            col.enabled = false;
-        }
-    }
-
-    private void OnTriggerEnter2D(Collider2D other)
-    {
-        // Handle collision with enemy
-        if (other.CompareTag("Enemy"))
-        {
-            TakeDamage(1);
-            
-            EnemyController enemy = other.GetComponent<EnemyController>();
-            if (enemy != null)
-            {
-                enemy.TakeDamage(enemy.MaxHealth); // Destroy enemy on collision
-            }
-        }
-        // Handle collision with enemy bullet
-        else if (other.CompareTag("EnemyBullet"))
-        {
-            TakeDamage(1);
+            PowerUp pu = other.GetComponent<PowerUp>();
+            if (pu != null) pu.Apply(this);
             Destroy(other.gameObject);
         }
     }
 
-    public void ResetPlayer()
+    // Utility: procedural circle sprite for shield visual
+    Sprite CreateCircleSprite()
     {
-        currentHealth = maxHealth;
-        canControl = true;
-        transform.position = new Vector3(0f, -3f, 0f);
-        
-        SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null)
-        {
-            spriteRenderer.enabled = true;
-        }
-
-        Collider2D col = GetComponent<Collider2D>();
-        if (col != null)
-        {
-            col.enabled = true;
-        }
-
-        UpdateHealthUI();
+        int size = 64;
+        Texture2D tex = new Texture2D(size, size);
+        tex.filterMode = FilterMode.Bilinear;
+        float center = size / 2f;
+        float radius = size / 2f;
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                float dist = Vector2.Distance(new Vector2(x, y), new Vector2(center, center));
+                tex.SetPixel(x, y, dist < radius ? Color.white : Color.clear);
+            }
+        tex.Apply();
+        return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), size);
     }
 }
