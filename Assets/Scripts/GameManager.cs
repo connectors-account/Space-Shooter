@@ -2,161 +2,103 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Manages overall game state, score, and game flow.
+/// GameManager - Central controller for game state, score, and difficulty.
+/// Manages transitions between Menu, Playing, and GameOver states.
+/// Attach this to an empty GameObject named "GameManager" in the GamePlay scene.
 /// </summary>
 public class GameManager : MonoBehaviour
 {
+    // ── Singleton ──
     public static GameManager Instance { get; private set; }
 
-    [Header("Game Settings")]
-    [SerializeField] private int startingScore = 0;
+    // ── Game States ──
+    public enum GameState { Menu, Playing, GameOver }
+    public GameState CurrentState { get; private set; } = GameState.Playing;
 
-    private int currentScore;
-    private bool isGameOver = false;
-    private bool isPaused = false;
+    // ── Score ──
+    public int Score { get; private set; } = 0;
 
-    public int CurrentScore => currentScore;
-    public bool IsGameOver => isGameOver;
-    public bool IsPaused => isPaused;
+    // ── Difficulty ──
+    [Header("Difficulty Settings")]
+    [Tooltip("Starting interval (seconds) between enemy spawns")]
+    public float initialSpawnInterval = 2.0f;
 
-    private void Awake()
+    [Tooltip("Minimum spawn interval as difficulty increases")]
+    public float minimumSpawnInterval = 0.4f;
+
+    [Tooltip("How much the spawn interval decreases per second of gameplay")]
+    public float difficultyRampRate = 0.02f;
+
+    /// <summary>Current spawn interval, decreases over time.</summary>
+    public float CurrentSpawnInterval { get; private set; }
+
+    // ── Internal ──
+    private float gameTime = 0f;
+
+    // ────────────────────────────────────────────
+    void Awake()
     {
-        // Singleton pattern
-        if (Instance == null)
-        {
-            Instance = this;
-        }
-        else
+        // Singleton pattern – only one GameManager allowed
+        if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
             return;
         }
+        Instance = this;
+        CurrentSpawnInterval = initialSpawnInterval;
     }
 
-    private void Start()
+    void Start()
     {
-        StartGame();
-    }
-
-    private void Update()
-    {
-        HandlePauseInput();
-        HandleRestartInput();
-    }
-
-    private void HandlePauseInput()
-    {
-        if (Input.GetKeyDown(KeyCode.Escape) && !isGameOver)
-        {
-            TogglePause();
-        }
-    }
-
-    private void HandleRestartInput()
-    {
-        if (isGameOver && Input.GetKeyDown(KeyCode.R))
-        {
-            RestartGame();
-        }
-    }
-
-    public void StartGame()
-    {
-        currentScore = startingScore;
-        isGameOver = false;
-        isPaused = false;
+        CurrentState = GameState.Playing;
         Time.timeScale = 1f;
-
-        UpdateScoreUI();
-
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.HideGameOver();
-            UIManager.Instance.HidePauseMenu();
-        }
     }
 
+    void Update()
+    {
+        if (CurrentState != GameState.Playing) return;
+
+        // Track elapsed time and ramp difficulty
+        gameTime += Time.deltaTime;
+        CurrentSpawnInterval = Mathf.Max(
+            minimumSpawnInterval,
+            initialSpawnInterval - (difficultyRampRate * gameTime)
+        );
+    }
+
+    // ── Public API ──
+
+    /// <summary>Add points to the player's score.</summary>
     public void AddScore(int points)
     {
-        if (isGameOver)
-            return;
-
-        currentScore += points;
-        UpdateScoreUI();
+        if (CurrentState != GameState.Playing) return;
+        Score += points;
     }
 
-    private void UpdateScoreUI()
+    /// <summary>Called by PlayerController when the player dies.</summary>
+    public void TriggerGameOver()
     {
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.UpdateScore(currentScore);
-        }
+        if (CurrentState == GameState.GameOver) return;
+
+        CurrentState = GameState.GameOver;
+        Time.timeScale = 0f; // Pause the game
+
+        // Tell the HUD to show the Game Over panel
+        if (HUDManager.Instance != null)
+            HUDManager.Instance.ShowGameOver(Score);
     }
 
-    public void GameOver()
-    {
-        if (isGameOver)
-            return;
-
-        isGameOver = true;
-        Time.timeScale = 0f;
-
-        // Save high score
-        int highScore = PlayerPrefs.GetInt("HighScore", 0);
-        if (currentScore > highScore)
-        {
-            PlayerPrefs.SetInt("HighScore", currentScore);
-            PlayerPrefs.Save();
-        }
-
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.ShowGameOver(currentScore, PlayerPrefs.GetInt("HighScore", 0));
-        }
-
-        Debug.Log($"Game Over! Final Score: {currentScore}");
-    }
-
+    /// <summary>Restart the gameplay scene.</summary>
     public void RestartGame()
     {
         Time.timeScale = 1f;
-        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+        SceneManager.LoadScene("GamePlay");
     }
 
-    public void TogglePause()
+    /// <summary>Return to the main menu scene.</summary>
+    public void GoToMainMenu()
     {
-        isPaused = !isPaused;
-        Time.timeScale = isPaused ? 0f : 1f;
-
-        if (UIManager.Instance != null)
-        {
-            if (isPaused)
-            {
-                UIManager.Instance.ShowPauseMenu();
-            }
-            else
-            {
-                UIManager.Instance.HidePauseMenu();
-            }
-        }
-    }
-
-    public void QuitGame()
-    {
-        Debug.Log("Quitting game...");
-        
-        #if UNITY_EDITOR
-            UnityEditor.EditorApplication.isPlaying = false;
-        #else
-            Application.Quit();
-        #endif
-    }
-
-    private void OnDestroy()
-    {
-        if (Instance == this)
-        {
-            Instance = null;
-        }
+        Time.timeScale = 1f;
+        SceneManager.LoadScene("MainMenu");
     }
 }
