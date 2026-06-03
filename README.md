@@ -1,244 +1,208 @@
-# 🚀 Space Shooter - Unity Game
+# 🚀 Space Shooter — Unity 2D Game (Windows Desktop)
 
-A complete 2D space shooter game built with Unity and C#. Features player ship combat, 3 enemy types, power-ups, wave progression, and full UI.
-
-![Unity](https://img.shields.io/badge/Unity-2021.3%2B-blue)
-![C#](https://img.shields.io/badge/C%23-.NET-purple)
-![Platform](https://img.shields.io/badge/Platform-Windows-green)
+A complete, fully-functional 2D space shooter built in **Unity** with **C#**. Fly your ship, blast waves of enemies, dodge incoming fire, rack up a high score, and survive as long as you can. The project includes clean, heavily-commented scripts and a **one-click editor tool** that builds the entire playable scene for you — no tedious manual setup required.
 
 ---
 
-## 🎮 Game Features
+## 🎮 Gameplay Overview
 
-- **Player ship** with smooth keyboard movement (Arrow Keys/WASD) and shooting (Spacebar)
-- **3 enemy types** with unique AI behaviors:
-  - **Basic** — Flies straight down, fires occasionally
-  - **Zigzag** — Weaves left/right, fires aimed shots at player
-  - **Tank** — Slow-moving, high health, fires burst shots
-- **Wave progression** — Enemies increase in number and difficulty each wave
-- **3 Power-up types:**
-  - 💚 **Health Pack** — Restores 30 HP
-  - 🔶 **Rapid Fire** — Doubles fire rate for 5 seconds
-  - 🔵 **Shield** — Blocks all damage for 8 seconds
-- **Collision system** with trigger-based 2D physics
-- **Health system** with invincibility frames after damage
-- **Score tracking** with persistent high score (saved via PlayerPrefs)
-- **Full UI system:** Main Menu → Gameplay HUD → Game Over Screen → Pause Menu
-- **Procedural star field** background with parallax scrolling
-- **Sound effects** for shooting, explosions, power-ups, and UI
+| Feature | Description |
+|---|---|
+| **Player movement** | WASD or Arrow keys |
+| **Shooting** | Spacebar (hold to auto-fire) |
+| **Enemies** | Spawn in escalating waves, move down, shoot back |
+| **Health** | Player takes damage from enemy ships & bullets |
+| **Scoring** | Earn points for every enemy destroyed |
+| **UI** | Live score, health, wave counter, and a Game Over / Win screen |
+| **Menus** | Main menu with Start and Quit |
+
+---
+
+## ✅ Requirements
+
+- **Unity 2021.3 LTS** (recommended) — the project also works on **Unity 2020.3 LTS or newer**.
+- **Unity Hub** (to manage editor versions).
+- **Windows** with the **"Windows Build Support (IL2CPP / Mono)"** module installed for the editor (needed only to build the `.exe`).
+
+> The project intentionally uses Unity's **legacy UI (`UnityEngine.UI`)** and **built-in 2D physics** so it works out-of-the-box with no extra packages.
 
 ---
 
 ## 📁 Project Structure
 
 ```
-space_shooter_game/
+SpaceShooterGame/
 ├── Assets/
-│   ├── Scripts/
-│   │   ├── Player/
-│   │   │   └── PlayerController.cs      # Ship movement, shooting, health, power-ups
-│   │   ├── Enemy/
-│   │   │   └── EnemyController.cs       # 3 enemy types with AI, shooting, drops
-│   │   ├── Weapons/
-│   │   │   └── BulletController.cs      # Universal bullet behavior
-│   │   ├── PowerUps/
-│   │   │   └── PowerUpController.cs     # 3 power-up types with effects
-│   │   ├── Managers/
-│   │   │   ├── GameManager.cs           # Score, waves, game state machine
-│   │   │   ├── SpawnManager.cs          # Enemy wave spawning logic
-│   │   │   └── AudioManager.cs          # Centralized sound management
-│   │   ├── UI/
-│   │   │   └── UIManager.cs             # All UI panels and HUD
-│   │   ├── Environment/
-│   │   │   ├── ParallaxBackground.cs    # 2-layer parallax scrolling
-│   │   │   └── StarField.cs             # Procedural star generation
-│   │   └── Utils/
-│   │       ├── ScreenBounds.cs          # Screen boundary calculations
-│   │       ├── AutoDestroy.cs           # Timed object cleanup
-│   │       └── ExplosionEffect.cs       # Visual explosion animation
-│   ├── Sprites/                         # All sprite assets (PNG)
-│   │   ├── player_ship.png
-│   │   ├── player_bullet.png
-│   │   ├── enemy_bullet.png
-│   │   ├── enemy_basic.png
-│   │   ├── enemy_zigzag.png
-│   │   ├── enemy_tank.png
-│   │   ├── powerup_health.png
-│   │   ├── powerup_rapidfire.png
-│   │   ├── powerup_shield.png
-│   │   ├── shield_bubble.png
-│   │   ├── bg_layer1.png
-│   │   ├── bg_layer2.png
-│   │   └── explosion.png
-│   ├── Audio/                           # All sound effects (WAV)
-│   │   ├── shoot.wav
-│   │   ├── explosion.wav
-│   │   ├── powerup.wav
-│   │   ├── player_hit.wav
-│   │   ├── wave_start.wav
-│   │   ├── game_over.wav
-│   │   └── button_click.wav
-│   ├── Prefabs/                         # (Created in Unity Editor)
-│   ├── Scenes/                          # (Created in Unity Editor)
-│   ├── Materials/
-│   └── Animations/
-├── ProjectSettings/
-│   ├── ProjectSettings.asset
-│   ├── TagManager.asset
-│   ├── Physics2DSettings.asset
-│   └── InputManager.asset
-├── SETUP_GUIDE.md                       # Detailed step-by-step Unity setup
-└── README.md                            # This file
+│   ├── Scripts/              # All gameplay C# scripts (10 files)
+│   │   ├── GameManager.cs        # Game state, score & health
+│   │   ├── PlayerController.cs    # Movement + shooting
+│   │   ├── Bullet.cs              # Player & enemy bullet behavior
+│   │   ├── Enemy.cs               # Enemy movement, shooting, health
+│   │   ├── EnemySpawner.cs        # Wave-based spawning
+│   │   ├── UIManager.cs           # HUD + game over screen
+│   │   ├── MainMenu.cs            # Main menu Start/Quit
+│   │   ├── Health.cs              # Reusable health component
+│   │   ├── DestroyOffScreen.cs    # Cleanup off-screen objects
+│   │   └── GameBoundary.cs        # Keeps player on screen
+│   ├── Editor/               # Editor-only automation (NOT in final build)
+│   │   ├── SceneBuilder.cs        # One-click full game builder
+│   │   └── BuildScript.cs         # Windows .exe build helper
+│   ├── Scenes/               # MainMenu.unity & Game.unity (auto-generated)
+│   ├── Prefabs/              # Player/Enemy/Bullet prefabs (auto-generated)
+│   └── Sprites/              # Procedurally-generated sprites (auto-generated)
+├── ProjectSettings/          # Unity project settings
+├── Packages/                 # Package manifest
+└── README.md
 ```
 
 ---
 
-## 🛠️ Quick Start
+## ⚡ Quick Start (the easy way — recommended)
 
-### Prerequisites
-- [Unity Hub](https://unity.com/download) installed
-- Unity Editor **2021.3 LTS** or newer (2022.3 LTS recommended)
-- Windows 10/11 for building Windows executables
+This project ships with a custom editor tool that **builds the whole game for you**.
 
-### Opening the Project
-1. Open **Unity Hub**
-2. Click **"Open"** → navigate to the `space_shooter_game` folder → Select it
-3. Unity imports all assets automatically (~1-2 min)
-4. Open `Assets/Scenes/GameScene.unity` (create it if needed per SETUP_GUIDE.md)
+1. **Open the project**
+   - Launch **Unity Hub** → **Add** → select the `SpaceShooterGame` folder.
+   - Open it with Unity 2021.3 LTS (or newer). Let Unity import (first import takes a minute).
 
-### First-Time Setup
-👉 **See [SETUP_GUIDE.md](SETUP_GUIDE.md) for complete step-by-step instructions** on:
-- Creating the game scene
-- Setting up all GameObjects and prefabs
-- Configuring the UI Canvas
-- Wiring up all script references
-- Testing and building
+2. **Run the one-click builder**
+   - In the top menu, click **`Tools → Space Shooter → Build Game (One Click)`**.
+   - This automatically creates the sprites, tags, prefabs, both scenes (Main Menu + Game), wires up all the UI, and configures Build Settings for Windows.
+   - A confirmation popup appears when it's done.
+
+3. **Play**
+   - Open **`Assets/Scenes/MainMenu.unity`** and press **Play ▶**.
+   - Click **Start Game**, then fly with **WASD/Arrows** and shoot with **Space**.
+
+That's it — a fully playable game in under a minute. 🎉
 
 ---
 
-## 🏗️ Building for Windows (.exe)
+## 🛠️ Manual Setup (the learning way)
 
-1. Open **File → Build Settings** in Unity
-2. Add your game scene to **Scenes In Build**
-3. Select **PC, Mac & Linux Standalone** platform
-4. Set Target Platform: **Windows**, Architecture: **x86_64**
-5. Configure in **Player Settings**:
-   - Product Name: `Space Shooter`
-   - Resolution: 1024 × 768
-   - Fullscreen Mode: Windowed
-6. Click **Build**
-7. Choose output folder → Wait for build
-8. Run the generated `.exe` file!
+Prefer to wire everything by hand to understand how it works? Follow these steps after opening the project.
 
-### Distribution
-Zip the entire build output folder:
-```
-SpaceShooter_Build/
-├── Space Shooter.exe
-├── Space Shooter_Data/
-├── UnityPlayer.dll
-└── MonoBleedingEdge/
+### 1. Create the tags
+`Edit → Project Settings → Tags and Layers`, and add these **Tags**:
+`Player`, `Enemy`, `PlayerBullet`, `EnemyBullet`.
+
+### 2. Bullet prefabs (Player & Enemy)
+1. `GameObject → 2D Object → Sprite` (or use any small sprite). Name it **PlayerBullet**.
+2. Add components: **Rigidbody 2D** (Gravity Scale = 0, Body Type = Kinematic), **Box Collider 2D** (check **Is Trigger**), and the **Bullet** script.
+3. Set its **Tag** to `PlayerBullet`. Add the **DestroyOffScreen** script.
+4. Drag it into `Assets/Prefabs` to make a prefab, then delete it from the scene.
+5. Repeat for **EnemyBullet** (Tag = `EnemyBullet`).
+
+### 3. Enemy prefab
+1. Create a sprite GameObject named **Enemy**.
+2. Add **Rigidbody 2D** (Gravity = 0), **Box Collider 2D** (Is Trigger), **Enemy** script, **DestroyOffScreen** script.
+3. Set **Tag** = `Enemy`.
+4. Create an empty child **FirePoint** at roughly `(0, -0.6, 0)` and assign it to the Enemy script's *Fire Point*.
+5. Assign the **EnemyBullet** prefab to the Enemy script's *Bullet Prefab*.
+6. Save as a prefab in `Assets/Prefabs`.
+
+### 4. Player
+1. Create a sprite GameObject named **Player**, place it near the bottom, e.g. `(0, -4, 0)`.
+2. Add **Rigidbody 2D** (Gravity = 0, **Freeze Rotation Z**), **Box Collider 2D** (Is Trigger), **PlayerController** script, **GameBoundary** script.
+3. Set **Tag** = `Player`.
+4. Create an empty child **FirePoint** at `(0, 0.6, 0)`; assign it to *Fire Point*.
+5. Assign the **PlayerBullet** prefab to *Bullet Prefab*.
+
+### 5. Managers & Spawner
+- Create an empty GameObject **GameManager** → add the **GameManager** script.
+- Create an empty GameObject **EnemySpawner** → add the **EnemySpawner** script → assign the **Enemy** prefab.
+
+### 6. UI (Canvas)
+1. `GameObject → UI → Canvas` (a Canvas + EventSystem are created).
+2. Add three **Text** elements: Score (top-left), Health (top-left below score), Wave (top-right).
+3. Add a **Panel** named **GameOverPanel** (full-screen, semi-transparent). Inside it add:
+   - A **Text** for the result ("GAME OVER"), a **Text** for final score, and two **Buttons** (Restart, Main Menu).
+4. Create an empty GameObject **UIManager** → add the **UIManager** script, and drag each UI element into its matching field in the Inspector.
+5. On the Restart button's **OnClick**, call `UIManager.OnRestartButton`. On Main Menu, call `UIManager.OnMainMenuButton`. Disable the GameOverPanel by default.
+
+### 7. Camera
+- Set **Main Camera** to **Orthographic**, Size ≈ `6`, and a dark background color.
+
+### 8. Main Menu scene
+1. Create a new scene **MainMenu**.
+2. Add a Canvas with a title **Text** and two **Buttons** (Start, Quit).
+3. Create a **MainMenu** GameObject with the **MainMenu** script (set *Game Scene Name* = `Game`).
+4. Wire Start → `MainMenu.StartGame`, Quit → `MainMenu.QuitGame`.
+
+### 9. Build Settings
+`File → Build Settings` → **Add Open Scenes** so that **MainMenu** is index 0 and **Game** is index 1.
+
+---
+
+## 🖥️ Building the Windows Executable
+
+### Option A — Editor menu (quickest)
+1. Run the one-click builder first (or set up manually) so scenes exist in Build Settings.
+2. Click **`Tools → Space Shooter → Build Windows EXE`**.
+3. The build is created at **`Builds/Windows/SpaceShooter.exe`**. Double-click to run.
+
+### Option B — Standard Build Settings dialog
+1. `File → Build Settings`.
+2. Select **Windows, Mac, Linux** and set **Target Platform = Windows**, **Architecture = x86_64**.
+3. Make sure both scenes are listed (MainMenu first).
+4. Click **Build**, choose an output folder, and Unity produces `SpaceShooter.exe` plus a `_Data` folder.
+5. **Ship the whole folder together** (the `.exe` needs its `_Data` folder).
+
+### Option C — Command line (headless / CI)
+```bat
+"C:\Program Files\Unity\Hub\Editor\2021.3.30f1\Editor\Unity.exe" ^
+    -quit -batchmode -projectPath "C:\path\to\SpaceShooterGame" ^
+    -executeMethod BuildScript.BuildWindows ^
+    -logFile build.log
 ```
 
 ---
 
 ## 🎯 Controls
 
-| Key | Action |
+| Action | Key |
 |---|---|
-| `↑ ↓ ← →` or `W A S D` | Move ship |
-| `Spacebar` | Fire weapon |
-| `ESC` | Pause / Resume |
+| Move | **W A S D** or **Arrow Keys** |
+| Shoot | **Spacebar** (hold for continuous fire) |
+| Restart | **Restart** button on the Game Over screen |
 
 ---
 
-## 📋 Script Reference
+## 🔧 Tweaking the Game (Inspector values)
 
-### Core Scripts
+All gameplay values are exposed in the Inspector — no code changes needed:
 
-| Script | Namespace | Purpose |
-|---|---|---|
-| `PlayerController.cs` | `SpaceShooter.Player` | Player movement, shooting, health, power-up activation |
-| `EnemyController.cs` | `SpaceShooter.Enemy` | Enemy AI (3 types), shooting patterns, health, power-up drops |
-| `BulletController.cs` | `SpaceShooter.Weapons` | Bullet movement, damage, lifetime management |
-| `PowerUpController.cs` | `SpaceShooter.PowerUps` | Power-up drift, bob animation, effect application |
-
-### Manager Scripts
-
-| Script | Pattern | Purpose |
-|---|---|---|
-| `GameManager.cs` | Singleton | Game state machine, score, wave progression, high score |
-| `SpawnManager.cs` | Component | Wave-based enemy spawning with difficulty scaling |
-| `AudioManager.cs` | Singleton | Centralized SFX and music playback |
-
-### UI & Environment
-
-| Script | Purpose |
-|---|---|
-| `UIManager.cs` | Main menu, HUD, game over, pause panel management |
-| `ParallaxBackground.cs` | 2-layer infinite scrolling background |
-| `StarField.cs` | Procedural star field generation |
-| `ScreenBounds.cs` | Screen-to-world boundary utility |
-| `ExplosionEffect.cs` | Animated explosion visual effect |
-| `AutoDestroy.cs` | Timed auto-destruction for temporary objects |
+- **PlayerController**: `moveSpeed`, `fireCooldown`, `collisionDamage`.
+- **Bullet**: `speed`, `damage`, `lifetime`.
+- **Enemy**: `moveSpeed`, `maxHealth`, `scoreValue`, `fireInterval`.
+- **EnemySpawner**: `baseEnemiesPerWave`, `enemiesAddedPerWave`, `spawnInterval`, `timeBetweenWaves`, `maxWaves` (set > 0 to enable a win condition by clearing all waves).
+- **GameManager**: `maxPlayerHealth`, `scoreToWin` (set > 0 to win by reaching a score).
 
 ---
 
-## ⚙️ Architecture
+## 🧠 How It Works (architecture)
 
-### Game State Machine
-```
-MainMenu → Playing → Paused → Playing → GameOver → MainMenu
-                                    └─────────────→ GameOver
-```
-
-### Event-Driven Communication
-- `GameManager` fires events: `OnScoreChanged`, `OnWaveChanged`, `OnGameStateChanged`
-- `PlayerController` fires events: `OnHealthChanged`, `OnPlayerDeath`
-- `EnemyController` fires events: `OnEnemyDestroyed`
-- `UIManager` subscribes to all events to update display
-
-### Collision Matrix
-| Object A | Object B | Result |
-|---|---|---|
-| PlayerBullet | Enemy | Enemy takes damage, bullet destroyed |
-| EnemyBullet | Player | Player takes damage, bullet destroyed |
-| Enemy | Player | Player takes contact damage |
-| PowerUp | Player | Power-up effect applied, pickup destroyed |
+- **GameManager** (singleton) owns the game state, score, and player health, and decides win/lose.
+- **UIManager** (singleton) receives updates from the GameManager and refreshes the HUD.
+- **PlayerController** reads input, moves via `Rigidbody2D`, and spawns player bullets.
+- **Enemy** drifts downward and periodically spawns enemy bullets; it has its own health and awards score on death.
+- **Bullet** knows its owner (Player/Enemy) which determines direction and what it can hit.
+- **EnemySpawner** runs a coroutine producing progressively harder waves.
+- **DestroyOffScreen** and **GameBoundary** keep the scene clean and the player contained.
+- **Health** is a reusable, event-driven component you can attach to any future destructible object.
 
 ---
 
-## 🔧 Customization
+## ❓ Troubleshooting
 
-### Adjusting Difficulty
-In `GameManager` inspector:
-- `Enemies Per Wave Base` — Starting enemies (default: 5)
-- `Enemies Per Wave Increment` — Extra enemies per wave (default: 3)
-- `Wave Cooldown` — Seconds between waves (default: 3)
-
-In `SpawnManager` inspector:
-- `Base Spawn Interval` — Time between enemy spawns (default: 1.5s)
-- `Spawn Interval Reduction` — Faster spawns per wave (default: 0.1s)
-
-### Adjusting Player
-- `Move Speed` — Ship speed (default: 8)
-- `Fire Rate` — Seconds between shots (default: 0.25)
-- `Max Health` — Starting HP (default: 100)
-- `Invincibility Duration` — I-frames after hit (default: 1.5s)
-
-### Enemy Types
-Each enemy type has configurable health, speed, score value, and fire rate in the inspector.
+- **Buttons don't click:** ensure an **EventSystem** exists in the scene (the one-click builder adds it automatically).
+- **Player passes through enemies without damage:** confirm colliders are **Is Trigger** and tags are set correctly.
+- **Enemies don't spawn:** check that the **Enemy prefab** is assigned in the EnemySpawner.
+- **Text not visible:** make sure the Canvas render mode is **Screen Space - Overlay** and text color isn't transparent.
+- **Build has no scenes:** add both scenes under `File → Build Settings`.
 
 ---
 
-## 📝 License
+## 📜 License
 
-This project is provided as-is for educational purposes. Feel free to modify and distribute.
-
----
-
-## 🙏 Credits
-
-- Built with **Unity Engine**
-- Placeholder sprites generated programmatically (replace with your own art!)
-- Sound effects generated procedurally (replace with proper audio assets!)
+Free to use, modify, and learn from. Have fun and make it your own! 🌌

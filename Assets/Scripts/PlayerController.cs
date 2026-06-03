@@ -1,172 +1,143 @@
 using UnityEngine;
 
 /// <summary>
-/// Controls the player ship movement, shooting, and health management.
+/// Controls the player ship:
+///   - Movement using WASD or Arrow keys (via Unity's Input axes).
+///   - Shooting bullets with the Spacebar, with a configurable fire rate.
+///   - Reacts to collisions with enemies / enemy bullets by losing health.
+/// Requires a Rigidbody2D for physics-based movement and a Collider2D
+/// (set as a trigger) for hit detection.
 /// </summary>
+[RequireComponent(typeof(Rigidbody2D))]
 public class PlayerController : MonoBehaviour
 {
-    [Header("Movement Settings")]
-    [SerializeField] private float moveSpeed = 8f;
-    [SerializeField] private float horizontalBoundary = 8f;
-    [SerializeField] private float verticalBoundaryTop = 4f;
-    [SerializeField] private float verticalBoundaryBottom = -4f;
+    [Header("Movement")]
+    [Tooltip("Movement speed in units per second.")]
+    public float moveSpeed = 8f;
 
-    [Header("Shooting Settings")]
-    [SerializeField] private GameObject bulletPrefab;
-    [SerializeField] private Transform firePoint;
-    [SerializeField] private float fireRate = 0.25f;
+    [Header("Shooting")]
+    [Tooltip("Bullet prefab to spawn when firing.")]
+    public GameObject bulletPrefab;
 
-    [Header("Health Settings")]
-    [SerializeField] private int maxHealth = 3;
+    [Tooltip("Point from which bullets are spawned (usually in front of the ship).")]
+    public Transform firePoint;
 
-    private int currentHealth;
-    private float nextFireTime = 0f;
-    private bool canControl = true;
+    [Tooltip("Minimum time (seconds) between shots.")]
+    public float fireCooldown = 0.25f;
 
-    public int CurrentHealth => currentHealth;
-    public int MaxHealth => maxHealth;
+    [Header("Collision Damage")]
+    [Tooltip("Damage the player takes when hit by an enemy or enemy bullet.")]
+    public int collisionDamage = 20;
 
-    private void Start()
+    // Cached references and runtime state.
+    private Rigidbody2D rb;
+    private Vector2 moveInput;
+    private float nextFireTime;
+
+    /// <summary>
+    /// Awake caches the Rigidbody2D reference and configures it for top-down play.
+    /// </summary>
+    private void Awake()
     {
-        currentHealth = maxHealth;
-        UpdateHealthUI();
+        rb = GetComponent<Rigidbody2D>();
+
+        // A space shooter has no gravity; movement is fully controlled by input.
+        rb.gravityScale = 0f;
+        // Prevent the ship from spinning when it collides with things.
+        rb.freezeRotation = true;
     }
 
+    /// <summary>
+    /// Update reads player input every frame (input must be polled in Update,
+    /// not FixedUpdate, to avoid missing key presses).
+    /// </summary>
     private void Update()
     {
-        if (!canControl || GameManager.Instance == null || GameManager.Instance.IsGameOver)
+        // Do nothing if the game is not actively being played.
+        if (GameManager.Instance != null &&
+            GameManager.Instance.State != GameManager.GameState.Playing)
+        {
+            moveInput = Vector2.zero;
             return;
+        }
 
-        HandleMovement();
-        HandleShooting();
-    }
+        // GetAxisRaw returns -1, 0, or 1 with no smoothing, giving snappy controls.
+        // "Horizontal" = A/D or Left/Right arrows. "Vertical" = W/S or Up/Down arrows.
+        moveInput.x = Input.GetAxisRaw("Horizontal");
+        moveInput.y = Input.GetAxisRaw("Vertical");
 
-    private void HandleMovement()
-    {
-        float horizontalInput = Input.GetAxis("Horizontal");
-        float verticalInput = Input.GetAxis("Vertical");
+        // Normalize so diagonal movement isn't faster than straight movement.
+        if (moveInput.sqrMagnitude > 1f)
+            moveInput.Normalize();
 
-        // WASD and Arrow keys are both mapped to Horizontal/Vertical by default in Unity
-        Vector3 movement = new Vector3(horizontalInput, verticalInput, 0f) * moveSpeed * Time.deltaTime;
-        transform.Translate(movement, Space.World);
-
-        // Clamp position to screen boundaries
-        float clampedX = Mathf.Clamp(transform.position.x, -horizontalBoundary, horizontalBoundary);
-        float clampedY = Mathf.Clamp(transform.position.y, verticalBoundaryBottom, verticalBoundaryTop);
-        transform.position = new Vector3(clampedX, clampedY, transform.position.z);
-    }
-
-    private void HandleShooting()
-    {
+        // Fire when Spacebar is held and the cooldown has elapsed.
         if (Input.GetKey(KeyCode.Space) && Time.time >= nextFireTime)
         {
             Shoot();
-            nextFireTime = Time.time + fireRate;
+            nextFireTime = Time.time + fireCooldown;
         }
     }
 
+    /// <summary>
+    /// FixedUpdate applies physics-based movement at a fixed timestep.
+    /// </summary>
+    private void FixedUpdate()
+    {
+        // MovePosition gives smooth, collision-aware movement.
+        rb.MovePosition(rb.position + moveInput * moveSpeed * Time.fixedDeltaTime);
+    }
+
+    /// <summary>
+    /// Spawns a bullet at the fire point.
+    /// </summary>
     private void Shoot()
     {
-        if (bulletPrefab == null)
-        {
-            Debug.LogWarning("Bullet prefab not assigned to PlayerController!");
-            return;
-        }
+        if (bulletPrefab == null) return;
 
-        Vector3 spawnPosition = firePoint != null ? firePoint.position : transform.position + Vector3.up * 0.5f;
-        GameObject bullet = Instantiate(bulletPrefab, spawnPosition, Quaternion.identity);
-        
-        BulletController bulletController = bullet.GetComponent<BulletController>();
-        if (bulletController != null)
-        {
-            bulletController.Initialize(true, Vector3.up);
-        }
+        // Use the fire point if assigned; otherwise spawn at the ship's position.
+        Vector3 spawnPos = firePoint != null ? firePoint.position : transform.position;
+
+        GameObject bullet = Instantiate(bulletPrefab, spawnPos, Quaternion.identity);
+
+        // Tell the bullet it belongs to the player so it only hits enemies.
+        Bullet bulletScript = bullet.GetComponent<Bullet>();
+        if (bulletScript != null)
+            bulletScript.SetOwner(Bullet.Owner.Player);
     }
 
-    public void TakeDamage(int damage)
-    {
-        currentHealth -= damage;
-        currentHealth = Mathf.Max(currentHealth, 0);
-        
-        UpdateHealthUI();
-
-        if (currentHealth <= 0)
-        {
-            Die();
-        }
-    }
-
-    private void UpdateHealthUI()
-    {
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.UpdateHealth(currentHealth, maxHealth);
-        }
-    }
-
-    private void Die()
-    {
-        canControl = false;
-        
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.GameOver();
-        }
-
-        // Visual feedback - disable renderer instead of destroying
-        SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null)
-        {
-            spriteRenderer.enabled = false;
-        }
-
-        // Disable collider
-        Collider2D col = GetComponent<Collider2D>();
-        if (col != null)
-        {
-            col.enabled = false;
-        }
-    }
-
+    /// <summary>
+    /// Trigger-based collision handling. The player's collider should be a trigger.
+    /// We detect enemies and enemy bullets here.
+    /// </summary>
+    /// <param name="other">The collider we touched.</param>
     private void OnTriggerEnter2D(Collider2D other)
     {
-        // Handle collision with enemy
+        // Hit by an enemy ship directly.
         if (other.CompareTag("Enemy"))
         {
-            TakeDamage(1);
-            
-            EnemyController enemy = other.GetComponent<EnemyController>();
-            if (enemy != null)
-            {
-                enemy.TakeDamage(enemy.MaxHealth); // Destroy enemy on collision
-            }
+            TakeDamage(collisionDamage);
+
+            // Destroy the enemy on contact so it doesn't keep dealing damage.
+            Destroy(other.gameObject);
         }
-        // Handle collision with enemy bullet
+        // Hit by an enemy bullet.
         else if (other.CompareTag("EnemyBullet"))
         {
-            TakeDamage(1);
+            Bullet bullet = other.GetComponent<Bullet>();
+            int dmg = bullet != null ? bullet.damage : collisionDamage;
+            TakeDamage(dmg);
+
             Destroy(other.gameObject);
         }
     }
 
-    public void ResetPlayer()
+    /// <summary>
+    /// Routes damage through the GameManager which owns the player's health value.
+    /// </summary>
+    /// <param name="amount">Damage amount.</param>
+    private void TakeDamage(int amount)
     {
-        currentHealth = maxHealth;
-        canControl = true;
-        transform.position = new Vector3(0f, -3f, 0f);
-        
-        SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null)
-        {
-            spriteRenderer.enabled = true;
-        }
-
-        Collider2D col = GetComponent<Collider2D>();
-        if (col != null)
-        {
-            col.enabled = true;
-        }
-
-        UpdateHealthUI();
+        if (GameManager.Instance != null)
+            GameManager.Instance.DamagePlayer(amount);
     }
 }
