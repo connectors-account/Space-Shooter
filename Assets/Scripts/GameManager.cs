@@ -2,161 +2,174 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Manages overall game state, score, and game flow.
+/// GameManager is the central controller for the game.
+/// It is implemented as a singleton so any script can easily access it.
+/// Responsibilities:
+///   - Track the player's score and health.
+///   - Track the current game state (Playing / GameOver / Win).
+///   - Notify the UIManager whenever score or health changes.
+///   - Handle win / lose conditions and scene reloading.
 /// </summary>
 public class GameManager : MonoBehaviour
 {
+    // Singleton instance so other scripts can call GameManager.Instance.
     public static GameManager Instance { get; private set; }
 
-    [Header("Game Settings")]
-    [SerializeField] private int startingScore = 0;
+    [Header("Player Settings")]
+    [Tooltip("Maximum (and starting) health of the player.")]
+    public int maxPlayerHealth = 100;
 
+    [Header("Win Condition")]
+    [Tooltip("Score required to win the game. Set to 0 to disable win-by-score.")]
+    public int scoreToWin = 0;
+
+    // Current runtime values.
     private int currentScore;
-    private bool isGameOver = false;
-    private bool isPaused = false;
+    private int currentHealth;
 
-    public int CurrentScore => currentScore;
-    public bool IsGameOver => isGameOver;
-    public bool IsPaused => isPaused;
+    // Possible states the game can be in.
+    public enum GameState { Playing, GameOver, Win }
+    public GameState State { get; private set; }
 
+    /// <summary>
+    /// Awake runs before Start. We set up the singleton here.
+    /// </summary>
     private void Awake()
     {
-        // Singleton pattern
-        if (Instance == null)
-        {
-            Instance = this;
-        }
-        else
+        // Enforce a single instance of GameManager.
+        if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
             return;
         }
+        Instance = this;
     }
 
+    /// <summary>
+    /// Start initializes the game values when the scene loads.
+    /// </summary>
     private void Start()
     {
-        StartGame();
-    }
-
-    private void Update()
-    {
-        HandlePauseInput();
-        HandleRestartInput();
-    }
-
-    private void HandlePauseInput()
-    {
-        if (Input.GetKeyDown(KeyCode.Escape) && !isGameOver)
-        {
-            TogglePause();
-        }
-    }
-
-    private void HandleRestartInput()
-    {
-        if (isGameOver && Input.GetKeyDown(KeyCode.R))
-        {
-            RestartGame();
-        }
-    }
-
-    public void StartGame()
-    {
-        currentScore = startingScore;
-        isGameOver = false;
-        isPaused = false;
+        // Make sure time is running (it may have been paused on a previous game over).
         Time.timeScale = 1f;
 
-        UpdateScoreUI();
+        currentScore = 0;
+        currentHealth = maxPlayerHealth;
+        State = GameState.Playing;
 
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.HideGameOver();
-            UIManager.Instance.HidePauseMenu();
-        }
-    }
-
-    public void AddScore(int points)
-    {
-        if (isGameOver)
-            return;
-
-        currentScore += points;
-        UpdateScoreUI();
-    }
-
-    private void UpdateScoreUI()
-    {
+        // Update the UI with the starting values (if a UIManager exists).
         if (UIManager.Instance != null)
         {
             UIManager.Instance.UpdateScore(currentScore);
+            UIManager.Instance.UpdateHealth(currentHealth, maxPlayerHealth);
+            UIManager.Instance.HideGameOver();
         }
     }
 
-    public void GameOver()
+    /// <summary>
+    /// Adds points to the player's score and updates the UI.
+    /// Called by enemies when they are destroyed.
+    /// </summary>
+    /// <param name="points">Number of points to add.</param>
+    public void AddScore(int points)
     {
-        if (isGameOver)
-            return;
+        if (State != GameState.Playing) return;
 
-        isGameOver = true;
-        Time.timeScale = 0f;
-
-        // Save high score
-        int highScore = PlayerPrefs.GetInt("HighScore", 0);
-        if (currentScore > highScore)
-        {
-            PlayerPrefs.SetInt("HighScore", currentScore);
-            PlayerPrefs.Save();
-        }
+        currentScore += points;
 
         if (UIManager.Instance != null)
-        {
-            UIManager.Instance.ShowGameOver(currentScore, PlayerPrefs.GetInt("HighScore", 0));
-        }
+            UIManager.Instance.UpdateScore(currentScore);
 
-        Debug.Log($"Game Over! Final Score: {currentScore}");
+        // Check the optional win-by-score condition.
+        if (scoreToWin > 0 && currentScore >= scoreToWin)
+            WinGame();
     }
 
+    /// <summary>
+    /// Reduces the player's health by the given damage amount.
+    /// Triggers game over when health reaches zero.
+    /// </summary>
+    /// <param name="damage">Amount of damage taken.</param>
+    public void DamagePlayer(int damage)
+    {
+        if (State != GameState.Playing) return;
+
+        currentHealth -= damage;
+        if (currentHealth < 0) currentHealth = 0;
+
+        if (UIManager.Instance != null)
+            UIManager.Instance.UpdateHealth(currentHealth, maxPlayerHealth);
+
+        if (currentHealth <= 0)
+            GameOver();
+    }
+
+    /// <summary>
+    /// Heals the player without exceeding the maximum health.
+    /// </summary>
+    /// <param name="amount">Amount of health to restore.</param>
+    public void HealPlayer(int amount)
+    {
+        if (State != GameState.Playing) return;
+
+        currentHealth += amount;
+        if (currentHealth > maxPlayerHealth) currentHealth = maxPlayerHealth;
+
+        if (UIManager.Instance != null)
+            UIManager.Instance.UpdateHealth(currentHealth, maxPlayerHealth);
+    }
+
+    /// <summary>
+    /// Ends the game with a loss. Shows the game over UI and freezes the game.
+    /// </summary>
+    public void GameOver()
+    {
+        if (State != GameState.Playing) return;
+
+        State = GameState.GameOver;
+
+        if (UIManager.Instance != null)
+            UIManager.Instance.ShowGameOver(currentScore, false);
+
+        // Freeze gameplay. UI buttons still work because they ignore timeScale.
+        Time.timeScale = 0f;
+    }
+
+    /// <summary>
+    /// Ends the game with a win. Shows the win UI and freezes the game.
+    /// </summary>
+    public void WinGame()
+    {
+        if (State != GameState.Playing) return;
+
+        State = GameState.Win;
+
+        if (UIManager.Instance != null)
+            UIManager.Instance.ShowGameOver(currentScore, true);
+
+        Time.timeScale = 0f;
+    }
+
+    /// <summary>
+    /// Reloads the current gameplay scene to restart the game.
+    /// Hooked up to the "Restart" button in the UI.
+    /// </summary>
     public void RestartGame()
     {
         Time.timeScale = 1f;
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
 
-    public void TogglePause()
+    /// <summary>
+    /// Loads the main menu scene. Hooked up to the "Main Menu" button.
+    /// </summary>
+    public void GoToMainMenu()
     {
-        isPaused = !isPaused;
-        Time.timeScale = isPaused ? 0f : 1f;
-
-        if (UIManager.Instance != null)
-        {
-            if (isPaused)
-            {
-                UIManager.Instance.ShowPauseMenu();
-            }
-            else
-            {
-                UIManager.Instance.HidePauseMenu();
-            }
-        }
+        Time.timeScale = 1f;
+        SceneManager.LoadScene("MainMenu");
     }
 
-    public void QuitGame()
-    {
-        Debug.Log("Quitting game...");
-        
-        #if UNITY_EDITOR
-            UnityEditor.EditorApplication.isPlaying = false;
-        #else
-            Application.Quit();
-        #endif
-    }
-
-    private void OnDestroy()
-    {
-        if (Instance == this)
-        {
-            Instance = null;
-        }
-    }
+    // Public getters in case other scripts need to read these values.
+    public int GetScore() => currentScore;
+    public int GetHealth() => currentHealth;
 }
