@@ -4,53 +4,20 @@
 TagManager:
   serializedVersion: 2
   tags:
-  - PlayerBullet
-  - EnemyBullet
   - Enemy
-  - PowerUp
+  - Boundary
   layers:
   - Default
   - TransparentFX
   - Ignore Raycast
-  -
+  - 
   - Water
   - UI
-  -
-  -
+  - 
+  - 
   - Player
   - Enemy
-  - Bullet
-  - PowerUp
-  - Background
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
-  -
   m_SortingLayers:
-  - name: Background
-    uniqueID: 1
-    locked: 0
   - name: Default
     uniqueID: 0
-    locked: 0
-  - name: Foreground
-    uniqueID: 2
-    locked: 0
-  - name: UI
-    uniqueID: 3
     locked: 0

@@ -1,162 +1,161 @@
+using System;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Manages overall game state, score, and game flow.
+/// Central game state controller. Tracks score, waves, and overall game flow
+/// (menu -> playing -> game over). Implemented as a lightweight singleton so any
+/// other script can reach it via GameManager.Instance.
 /// </summary>
 public class GameManager : MonoBehaviour
 {
+    public enum GameState
+    {
+        Menu,
+        Playing,
+        GameOver
+    }
+
     public static GameManager Instance { get; private set; }
 
-    [Header("Game Settings")]
-    [SerializeField] private int startingScore = 0;
+    [Header("Gameplay")]
+    [Tooltip("Points awarded for each enemy destroyed (before wave multiplier).")]
+    public int pointsPerEnemy = 100;
 
-    private int currentScore;
-    private bool isGameOver = false;
-    private bool isPaused = false;
+    // Runtime state
+    public GameState State { get; private set; } = GameState.Menu;
+    public int Score { get; private set; }
+    public int Wave { get; private set; }
+    public int HighScore { get; private set; }
 
-    public int CurrentScore => currentScore;
-    public bool IsGameOver => isGameOver;
-    public bool IsPaused => isPaused;
+    // Events that the UI (and others) can subscribe to.
+    public event Action<int> OnScoreChanged;
+    public event Action<int> OnWaveChanged;
+    public event Action<GameState> OnStateChanged;
+
+    private const string HighScoreKey = "SpaceShooter_HighScore";
 
     private void Awake()
     {
-        // Singleton pattern
-        if (Instance == null)
-        {
-            Instance = this;
-        }
-        else
+        // Enforce a single instance.
+        if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
             return;
         }
+
+        Instance = this;
+        HighScore = PlayerPrefs.GetInt(HighScoreKey, 0);
     }
 
     private void Start()
     {
-        StartGame();
+        // Start in the menu state and make sure time is running.
+        SetState(GameState.Menu);
+        Time.timeScale = 1f;
     }
 
     private void Update()
     {
-        HandlePauseInput();
-        HandleRestartInput();
-    }
-
-    private void HandlePauseInput()
-    {
-        if (Input.GetKeyDown(KeyCode.Escape) && !isGameOver)
+        // Quick restart / start with the Enter key for convenience.
+        if (State == GameState.Menu && Input.GetKeyDown(KeyCode.Return))
         {
-            TogglePause();
+            StartGame();
         }
-    }
-
-    private void HandleRestartInput()
-    {
-        if (isGameOver && Input.GetKeyDown(KeyCode.R))
+        else if (State == GameState.GameOver && Input.GetKeyDown(KeyCode.Return))
         {
             RestartGame();
         }
     }
 
+    /// <summary>
+    /// Begins a fresh game: resets score and wave, then hands control to SpawnManager.
+    /// </summary>
     public void StartGame()
     {
-        currentScore = startingScore;
-        isGameOver = false;
-        isPaused = false;
+        Score = 0;
+        Wave = 0;
+        OnScoreChanged?.Invoke(Score);
+        OnWaveChanged?.Invoke(Wave);
+
+        SetState(GameState.Playing);
         Time.timeScale = 1f;
 
-        UpdateScoreUI();
-
-        if (UIManager.Instance != null)
+        if (SpawnManager.Instance != null)
         {
-            UIManager.Instance.HideGameOver();
-            UIManager.Instance.HidePauseMenu();
+            SpawnManager.Instance.BeginSpawning();
         }
     }
 
-    public void AddScore(int points)
-    {
-        if (isGameOver)
-            return;
-
-        currentScore += points;
-        UpdateScoreUI();
-    }
-
-    private void UpdateScoreUI()
-    {
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.UpdateScore(currentScore);
-        }
-    }
-
-    public void GameOver()
-    {
-        if (isGameOver)
-            return;
-
-        isGameOver = true;
-        Time.timeScale = 0f;
-
-        // Save high score
-        int highScore = PlayerPrefs.GetInt("HighScore", 0);
-        if (currentScore > highScore)
-        {
-            PlayerPrefs.SetInt("HighScore", currentScore);
-            PlayerPrefs.Save();
-        }
-
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.ShowGameOver(currentScore, PlayerPrefs.GetInt("HighScore", 0));
-        }
-
-        Debug.Log($"Game Over! Final Score: {currentScore}");
-    }
-
+    /// <summary>
+    /// Reloads the active scene to guarantee a clean restart.
+    /// </summary>
     public void RestartGame()
     {
         Time.timeScale = 1f;
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
 
-    public void TogglePause()
+    /// <summary>
+    /// Adds points (scaled by the current wave) and updates the high score.
+    /// </summary>
+    public void AddScore(int basePoints)
     {
-        isPaused = !isPaused;
-        Time.timeScale = isPaused ? 0f : 1f;
-
-        if (UIManager.Instance != null)
+        if (State != GameState.Playing)
         {
-            if (isPaused)
-            {
-                UIManager.Instance.ShowPauseMenu();
-            }
-            else
-            {
-                UIManager.Instance.HidePauseMenu();
-            }
+            return;
+        }
+
+        int waveMultiplier = Mathf.Max(1, Wave);
+        Score += basePoints * waveMultiplier;
+        OnScoreChanged?.Invoke(Score);
+
+        if (Score > HighScore)
+        {
+            HighScore = Score;
+            PlayerPrefs.SetInt(HighScoreKey, HighScore);
+            PlayerPrefs.Save();
         }
     }
 
-    public void QuitGame()
+    /// <summary>
+    /// Convenience overload used by enemies when they die.
+    /// </summary>
+    public void AddEnemyKillScore()
     {
-        Debug.Log("Quitting game...");
-        
-        #if UNITY_EDITOR
-            UnityEditor.EditorApplication.isPlaying = false;
-        #else
-            Application.Quit();
-        #endif
+        AddScore(pointsPerEnemy);
     }
 
-    private void OnDestroy()
+    /// <summary>
+    /// Advances the wave counter. Called by SpawnManager between waves.
+    /// </summary>
+    public void NextWave()
     {
-        if (Instance == this)
+        Wave++;
+        OnWaveChanged?.Invoke(Wave);
+    }
+
+    /// <summary>
+    /// Called when the player dies. Stops spawning and shows the game-over screen.
+    /// </summary>
+    public void GameOver()
+    {
+        if (State == GameState.GameOver)
         {
-            Instance = null;
+            return;
         }
+
+        SetState(GameState.GameOver);
+
+        if (SpawnManager.Instance != null)
+        {
+            SpawnManager.Instance.StopSpawning();
+        }
+    }
+
+    private void SetState(GameState newState)
+    {
+        State = newState;
+        OnStateChanged?.Invoke(State);
     }
 }
