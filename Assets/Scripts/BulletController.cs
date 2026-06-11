@@ -1,68 +1,97 @@
 using UnityEngine;
 
 /// <summary>
-/// Controls bullet movement and behavior for both player and enemy bullets.
+/// Controls a single projectile. Moves in a straight line, applies damage on
+/// contact, and self-destructs after a lifetime or when leaving the screen.
+/// The same prefab is used for player and enemy bullets; the "owner" tag tells
+/// it which targets it may hurt.
 /// </summary>
+[RequireComponent(typeof(Rigidbody2D))]
+[RequireComponent(typeof(Collider2D))]
 public class BulletController : MonoBehaviour
 {
+    public enum Owner
+    {
+        Player,
+        Enemy
+    }
+
     [Header("Bullet Settings")]
-    [SerializeField] private float speed = 12f;
-    [SerializeField] private float lifetime = 3f;
+    [Tooltip("Movement speed in units per second.")]
+    public float speed = 12f;
 
-    private Vector3 moveDirection = Vector3.up;
-    private bool isPlayerBullet = true;
+    [Tooltip("Damage dealt to whatever it hits.")]
+    public int damage = 25;
 
-    public bool IsPlayerBullet => isPlayerBullet;
+    [Tooltip("Seconds before the bullet auto-destroys if it hits nothing.")]
+    public float lifetime = 3f;
+
+    [Tooltip("Who fired this bullet. Determines valid targets.")]
+    public Owner owner = Owner.Player;
+
+    // Direction is set by the shooter. Default up for player shots.
+    private Vector2 direction = Vector2.up;
+    private Rigidbody2D rb;
+
+    private void Awake()
+    {
+        rb = GetComponent<Rigidbody2D>();
+        rb.gravityScale = 0f;
+
+        // Ensure the collider is a trigger so we use OnTriggerEnter2D.
+        Collider2D col = GetComponent<Collider2D>();
+        col.isTrigger = true;
+    }
 
     private void Start()
     {
-        // Destroy bullet after lifetime expires
+        // Auto-destroy after its lifetime regardless of collisions.
         Destroy(gameObject, lifetime);
+    }
+
+    /// <summary>
+    /// Called by the shooter right after instantiation to configure the bullet.
+    /// </summary>
+    public void Initialize(Vector2 fireDirection, Owner bulletOwner, int bulletDamage, float bulletSpeed)
+    {
+        direction = fireDirection.normalized;
+        owner = bulletOwner;
+        damage = bulletDamage;
+        speed = bulletSpeed;
     }
 
     private void Update()
     {
-        Move();
+        // Move the bullet each frame.
+        transform.Translate(direction * speed * Time.deltaTime, Space.World);
     }
 
-    private void Move()
+    private void OnTriggerEnter2D(Collider2D other)
     {
-        transform.Translate(moveDirection * speed * Time.deltaTime, Space.World);
-    }
-
-    /// <summary>
-    /// Initialize the bullet with direction and ownership.
-    /// </summary>
-    /// <param name="playerBullet">True if fired by player, false if fired by enemy</param>
-    /// <param name="direction">Direction the bullet should travel</param>
-    public void Initialize(bool playerBullet, Vector3 direction)
-    {
-        isPlayerBullet = playerBullet;
-        moveDirection = direction.normalized;
-
-        // Set appropriate tag based on ownership
-        if (playerBullet)
+        // Player bullets damage enemies; enemy bullets damage the player.
+        if (owner == Owner.Player && other.CompareTag("Enemy"))
         {
-            gameObject.tag = "PlayerBullet";
+            ApplyDamage(other);
+            Destroy(gameObject);
         }
-        else
+        else if (owner == Owner.Enemy && other.CompareTag("Player"))
         {
-            gameObject.tag = "EnemyBullet";
+            ApplyDamage(other);
+            Destroy(gameObject);
         }
-
-        // Rotate bullet to face movement direction
-        if (direction != Vector3.zero)
+        else if (other.CompareTag("Boundary"))
         {
-            float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg - 90f;
-            transform.rotation = Quaternion.Euler(0f, 0f, angle);
+            // Despawn when crossing the screen boundary trigger.
+            Destroy(gameObject);
         }
     }
 
-    /// <summary>
-    /// Set bullet speed.
-    /// </summary>
-    public void SetSpeed(float newSpeed)
+    private void ApplyDamage(Collider2D target)
     {
-        speed = newSpeed;
+        Health health = target.GetComponent<Health>();
+        if (health != null)
+        {
+            health.TakeDamage(damage);
+        }
     }
 }
