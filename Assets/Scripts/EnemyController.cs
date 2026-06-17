@@ -1,129 +1,141 @@
 using UnityEngine;
 
 /// <summary>
-/// Controls enemy ship behavior including movement, shooting, and health.
+/// Controls an enemy ship. Supports a few simple movement patterns, has a
+/// small health pool, awards score when destroyed by the player, and cleans
+/// itself up once it travels off the bottom of the screen.
 /// </summary>
+[RequireComponent(typeof(Rigidbody2D))]
+[RequireComponent(typeof(Collider2D))]
 public class EnemyController : MonoBehaviour
 {
-    [Header("Movement Settings")]
-    [SerializeField] private float moveSpeed = 3f;
-    [SerializeField] private float horizontalMovement = 0f;
+    public enum MovementPattern { Straight, Sine, Diagonal }
 
-    [Header("Shooting Settings")]
-    [SerializeField] private GameObject bulletPrefab;
-    [SerializeField] private float fireRate = 2f;
-    [SerializeField] private bool canShoot = true;
+    [Header("Stats")]
+    [Tooltip("Hit points before the enemy is destroyed.")]
+    [SerializeField] private int maxHealth = 50;
 
-    [Header("Health & Score")]
-    [SerializeField] private int maxHealth = 1;
-    [SerializeField] private int scoreValue = 100;
+    [Tooltip("Points awarded to the player when this enemy is destroyed.")]
+    [SerializeField] private int scoreValue = 10;
 
-    [Header("Boundaries")]
-    [SerializeField] private float destroyY = -6f;
+    [Header("Movement")]
+    [Tooltip("Downward travel speed in world units per second.")]
+    [SerializeField] private float speed = 3f;
+
+    [Tooltip("Pattern used for horizontal motion.")]
+    [SerializeField] private MovementPattern pattern = MovementPattern.Straight;
+
+    [Tooltip("Horizontal amplitude used by the Sine pattern.")]
+    [SerializeField] private float sineAmplitude = 2f;
+
+    [Tooltip("Horizontal frequency used by the Sine pattern.")]
+    [SerializeField] private float sineFrequency = 2f;
+
+    [Tooltip("Horizontal direction (-1 left, 1 right) used by the Diagonal pattern.")]
+    [SerializeField] private float diagonalDirection = 1f;
+
+    [Header("Effects")]
+    [Tooltip("Optional explosion/particle prefab spawned on death.")]
+    [SerializeField] private GameObject deathEffect;
 
     private int currentHealth;
-    private float nextFireTime;
+    private float startX;
+    private float spawnTime;
+    private Collider2D col;
 
-    public int MaxHealth => maxHealth;
-    public int ScoreValue => scoreValue;
+    private void Awake()
+    {
+        var rb = GetComponent<Rigidbody2D>();
+        rb.gravityScale = 0f;
+        rb.freezeRotation = true;
+
+        col = GetComponent<Collider2D>();
+        col.isTrigger = true; // Trigger-based collisions throughout the game.
+    }
 
     private void Start()
     {
         currentHealth = maxHealth;
-        nextFireTime = Time.time + Random.Range(0.5f, fireRate);
-        
-        // Add slight random horizontal movement variation
-        horizontalMovement = Random.Range(-0.5f, 0.5f);
+        startX = transform.position.x;
+        spawnTime = Time.time;
+
+        // Randomise the diagonal direction if it was left at default for variety.
+        if (pattern == MovementPattern.Diagonal && Mathf.Approximately(diagonalDirection, 0f))
+        {
+            diagonalDirection = Random.value < 0.5f ? -1f : 1f;
+        }
     }
 
     private void Update()
     {
-        if (GameManager.Instance != null && GameManager.Instance.IsGameOver)
-            return;
-
-        Move();
-        HandleShooting();
-        CheckBounds();
+        MoveEnemy();
+        DestroyIfBelowScreen();
     }
 
-    private void Move()
+    /// <summary>Apply the configured movement pattern.</summary>
+    private void MoveEnemy()
     {
-        Vector3 movement = new Vector3(horizontalMovement, -1f, 0f).normalized * moveSpeed * Time.deltaTime;
-        transform.Translate(movement, Space.World);
-    }
+        Vector3 pos = transform.position;
 
-    private void HandleShooting()
-    {
-        if (!canShoot || bulletPrefab == null)
-            return;
+        // All patterns move downward over time.
+        pos.y -= speed * Time.deltaTime;
 
-        if (Time.time >= nextFireTime)
+        switch (pattern)
         {
-            Shoot();
-            nextFireTime = Time.time + fireRate + Random.Range(-0.5f, 0.5f);
+            case MovementPattern.Sine:
+                float elapsed = Time.time - spawnTime;
+                pos.x = startX + Mathf.Sin(elapsed * sineFrequency) * sineAmplitude;
+                break;
+
+            case MovementPattern.Diagonal:
+                pos.x += diagonalDirection * speed * 0.5f * Time.deltaTime;
+                break;
+
+            case MovementPattern.Straight:
+            default:
+                // No horizontal change.
+                break;
         }
+
+        transform.position = pos;
     }
 
-    private void Shoot()
+    /// <summary>Remove the enemy once it has fully left the bottom of the view.</summary>
+    private void DestroyIfBelowScreen()
     {
-        Vector3 spawnPosition = transform.position + Vector3.down * 0.5f;
-        GameObject bullet = Instantiate(bulletPrefab, spawnPosition, Quaternion.identity);
-        
-        BulletController bulletController = bullet.GetComponent<BulletController>();
-        if (bulletController != null)
-        {
-            bulletController.Initialize(false, Vector3.down);
-        }
-    }
+        Camera cam = Camera.main;
+        if (cam == null) return;
 
-    private void CheckBounds()
-    {
-        if (transform.position.y < destroyY)
+        Vector3 viewPos = cam.WorldToViewportPoint(transform.position);
+        if (viewPos.y < -0.15f)
         {
             Destroy(gameObject);
         }
     }
 
-    public void TakeDamage(int damage)
+    /// <summary>Reduce health and die when it reaches zero.</summary>
+    public void TakeDamage(int amount)
     {
-        currentHealth -= damage;
-        
+        currentHealth -= amount;
         if (currentHealth <= 0)
         {
-            Die();
+            Die(awardScore: true);
         }
     }
 
-    private void Die()
+    /// <summary>Destroy this enemy, optionally awarding score and spawning an effect.</summary>
+    public void Die(bool awardScore)
     {
-        // Add score
-        if (GameManager.Instance != null)
+        if (awardScore && GameManager.Instance != null)
         {
             GameManager.Instance.AddScore(scoreValue);
         }
 
-        Destroy(gameObject);
-    }
-
-    private void OnTriggerEnter2D(Collider2D other)
-    {
-        // Handle collision with player bullet
-        if (other.CompareTag("PlayerBullet"))
+        if (deathEffect != null)
         {
-            TakeDamage(1);
-            Destroy(other.gameObject);
+            Instantiate(deathEffect, transform.position, Quaternion.identity);
         }
-    }
 
-    /// <summary>
-    /// Configure enemy properties (called by spawner)
-    /// </summary>
-    public void Configure(float speed, int health, int score, bool shooting)
-    {
-        moveSpeed = speed;
-        maxHealth = health;
-        currentHealth = health;
-        scoreValue = score;
-        canShoot = shooting;
+        Destroy(gameObject);
     }
 }

@@ -1,68 +1,100 @@
 using UnityEngine;
 
 /// <summary>
-/// Controls bullet movement and behavior for both player and enemy bullets.
+/// Controls a single bullet: moves it in a fixed direction, destroys it when
+/// it leaves the screen or after a lifetime, and handles collisions. A bullet
+/// fired by the player damages enemies; (optionally) enemy bullets could damage
+/// the player using the same component.
 /// </summary>
+[RequireComponent(typeof(Rigidbody2D))]
+[RequireComponent(typeof(Collider2D))]
 public class BulletController : MonoBehaviour
 {
+    public enum BulletOwner { Player, Enemy }
+
     [Header("Bullet Settings")]
-    [SerializeField] private float speed = 12f;
-    [SerializeField] private float lifetime = 3f;
+    [Tooltip("Travel speed in world units per second.")]
+    [SerializeField] private float speed = 14f;
 
-    private Vector3 moveDirection = Vector3.up;
-    private bool isPlayerBullet = true;
+    [Tooltip("Seconds before the bullet auto-destroys (safety net).")]
+    [SerializeField] private float lifetime = 4f;
 
-    public bool IsPlayerBullet => isPlayerBullet;
+    [Tooltip("Damage dealt to enemies (player bullets) or player (enemy bullets).")]
+    [SerializeField] private int damage = 25;
+
+    private Vector2 direction = Vector2.up;
+    private BulletOwner owner = BulletOwner.Player;
+    private Rigidbody2D rb;
+
+    private void Awake()
+    {
+        rb = GetComponent<Rigidbody2D>();
+        rb.gravityScale = 0f;
+
+        // Ensure the collider is a trigger for clean overlap detection.
+        Collider2D col = GetComponent<Collider2D>();
+        col.isTrigger = true;
+    }
 
     private void Start()
     {
-        // Destroy bullet after lifetime expires
+        // Auto-destroy after its lifetime so nothing lingers off-screen.
         Destroy(gameObject, lifetime);
+    }
+
+    /// <summary>Configure the bullet's direction and owner right after spawning.</summary>
+    public void Initialize(Vector2 travelDirection, BulletOwner bulletOwner)
+    {
+        direction = travelDirection.normalized;
+        owner = bulletOwner;
     }
 
     private void Update()
     {
-        Move();
-    }
+        // Move the bullet each frame.
+        transform.Translate(direction * speed * Time.deltaTime, Space.World);
 
-    private void Move()
-    {
-        transform.Translate(moveDirection * speed * Time.deltaTime, Space.World);
-    }
-
-    /// <summary>
-    /// Initialize the bullet with direction and ownership.
-    /// </summary>
-    /// <param name="playerBullet">True if fired by player, false if fired by enemy</param>
-    /// <param name="direction">Direction the bullet should travel</param>
-    public void Initialize(bool playerBullet, Vector3 direction)
-    {
-        isPlayerBullet = playerBullet;
-        moveDirection = direction.normalized;
-
-        // Set appropriate tag based on ownership
-        if (playerBullet)
+        // Destroy if it leaves the visible screen.
+        if (IsOffScreen())
         {
-            gameObject.tag = "PlayerBullet";
-        }
-        else
-        {
-            gameObject.tag = "EnemyBullet";
-        }
-
-        // Rotate bullet to face movement direction
-        if (direction != Vector3.zero)
-        {
-            float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg - 90f;
-            transform.rotation = Quaternion.Euler(0f, 0f, angle);
+            Destroy(gameObject);
         }
     }
 
-    /// <summary>
-    /// Set bullet speed.
-    /// </summary>
-    public void SetSpeed(float newSpeed)
+    private bool IsOffScreen()
     {
-        speed = newSpeed;
+        Camera cam = Camera.main;
+        if (cam == null) return false;
+
+        Vector3 viewPos = cam.WorldToViewportPoint(transform.position);
+        return viewPos.x < -0.1f || viewPos.x > 1.1f || viewPos.y < -0.1f || viewPos.y > 1.1f;
+    }
+
+    private void OnTriggerEnter2D(Collider2D other)
+    {
+        if (owner == BulletOwner.Player)
+        {
+            // Player bullet hits an enemy.
+            if (other.CompareTag("Enemy"))
+            {
+                EnemyController enemy = other.GetComponent<EnemyController>();
+                if (enemy != null)
+                {
+                    enemy.TakeDamage(damage);
+                }
+                Destroy(gameObject);
+            }
+        }
+        else // Enemy bullet
+        {
+            if (other.CompareTag("Player"))
+            {
+                if (GameManager.Instance != null)
+                {
+                    GameManager.Instance.DamagePlayer(damage);
+                }
+                Destroy(gameObject);
+            }
+        }
     }
 }
