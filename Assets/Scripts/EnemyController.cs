@@ -1,39 +1,53 @@
 using UnityEngine;
 
 /// <summary>
-/// Controls enemy ship behavior including movement, shooting, and health.
+/// Controls a single enemy ship: downward movement (with optional sine-wave
+/// sway), periodic shooting, health, and rewards/power-up drops on death.
 /// </summary>
+[RequireComponent(typeof(Collider2D))]
 public class EnemyController : MonoBehaviour
 {
-    [Header("Movement Settings")]
-    [SerializeField] private float moveSpeed = 3f;
-    [SerializeField] private float horizontalMovement = 0f;
+    [Header("Movement")]
+    [Tooltip("Downward speed in world units per second.")]
+    public float moveSpeed = 3f;
+    [Tooltip("Horizontal sway amplitude. Set 0 for straight movement.")]
+    public float swayAmplitude = 0f;
+    [Tooltip("How fast the sway oscillates.")]
+    public float swayFrequency = 2f;
 
-    [Header("Shooting Settings")]
-    [SerializeField] private GameObject bulletPrefab;
-    [SerializeField] private float fireRate = 2f;
-    [SerializeField] private bool canShoot = true;
+    [Header("Combat")]
+    public int maxHealth = 50;
+    [Tooltip("Damage dealt to the player on direct collision.")]
+    public int contactDamage = 25;
+    [Tooltip("Points awarded when this enemy is destroyed.")]
+    public int scoreValue = 100;
 
-    [Header("Health & Score")]
-    [SerializeField] private int maxHealth = 1;
-    [SerializeField] private int scoreValue = 100;
+    [Header("Shooting")]
+    public GameObject bulletPrefab;
+    [Tooltip("Minimum seconds between shots.")]
+    public float minFireInterval = 1.5f;
+    [Tooltip("Maximum seconds between shots.")]
+    public float maxFireInterval = 3.5f;
+    public float bulletSpeed = 7f;
 
-    [Header("Boundaries")]
-    [SerializeField] private float destroyY = -6f;
+    [Header("Drops")]
+    [Tooltip("Power-up prefab; leave null for no drops.")]
+    public GameObject powerUpPrefab;
+    [Range(0f, 1f)]
+    [Tooltip("Chance (0-1) to drop a power-up on death.")]
+    public float dropChance = 0.15f;
 
     private int currentHealth;
-    private float nextFireTime;
-
-    public int MaxHealth => maxHealth;
-    public int ScoreValue => scoreValue;
+    private float fireTimer;
+    private float startX;
+    private float swaySeed;
 
     private void Start()
     {
         currentHealth = maxHealth;
-        nextFireTime = Time.time + Random.Range(0.5f, fireRate);
-        
-        // Add slight random horizontal movement variation
-        horizontalMovement = Random.Range(-0.5f, 0.5f);
+        startX = transform.position.x;
+        swaySeed = Random.Range(0f, Mathf.PI * 2f); // desync multiple enemies
+        ResetFireTimer();
     }
 
     private void Update()
@@ -43,87 +57,80 @@ public class EnemyController : MonoBehaviour
 
         Move();
         HandleShooting();
-        CheckBounds();
+        CheckOffScreen();
     }
 
     private void Move()
     {
-        Vector3 movement = new Vector3(horizontalMovement, -1f, 0f).normalized * moveSpeed * Time.deltaTime;
-        transform.Translate(movement, Space.World);
+        Vector3 pos = transform.position;
+        pos.y -= moveSpeed * Time.deltaTime;
+
+        // Optional horizontal sway based on a sine wave.
+        if (swayAmplitude > 0f)
+            pos.x = startX + Mathf.Sin((Time.time * swayFrequency) + swaySeed) * swayAmplitude;
+
+        transform.position = pos;
     }
 
     private void HandleShooting()
     {
-        if (!canShoot || bulletPrefab == null)
-            return;
+        if (bulletPrefab == null) return;
 
-        if (Time.time >= nextFireTime)
+        fireTimer -= Time.deltaTime;
+        if (fireTimer <= 0f)
         {
-            Shoot();
-            nextFireTime = Time.time + fireRate + Random.Range(-0.5f, 0.5f);
+            Fire();
+            ResetFireTimer();
         }
     }
 
-    private void Shoot()
+    private void Fire()
     {
-        Vector3 spawnPosition = transform.position + Vector3.down * 0.5f;
-        GameObject bullet = Instantiate(bulletPrefab, spawnPosition, Quaternion.identity);
-        
-        BulletController bulletController = bullet.GetComponent<BulletController>();
-        if (bulletController != null)
-        {
-            bulletController.Initialize(false, Vector3.down);
-        }
+        GameObject bulletObj = Instantiate(bulletPrefab, transform.position, Quaternion.identity);
+        Bullet bullet = bulletObj.GetComponent<Bullet>();
+        if (bullet != null)
+            bullet.Initialize(Vector2.down, bulletSpeed, Bullet.Owner.Enemy);
     }
 
-    private void CheckBounds()
+    private void ResetFireTimer()
     {
-        if (transform.position.y < destroyY)
-        {
+        fireTimer = Random.Range(minFireInterval, maxFireInterval);
+    }
+
+    /// <summary>Destroy the enemy once it travels well below the screen.</summary>
+    private void CheckOffScreen()
+    {
+        if (Camera.main == null) return;
+        float bottom = Camera.main.ViewportToWorldPoint(Vector3.zero).y;
+        if (transform.position.y < bottom - 2f)
             Destroy(gameObject);
-        }
     }
 
-    public void TakeDamage(int damage)
+    /// <summary>Apply damage and destroy the enemy when health is depleted.</summary>
+    public void TakeDamage(int amount)
     {
-        currentHealth -= damage;
-        
+        currentHealth -= amount;
         if (currentHealth <= 0)
-        {
-            Die();
-        }
-    }
-
-    private void Die()
-    {
-        // Add score
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.AddScore(scoreValue);
-        }
-
-        Destroy(gameObject);
-    }
-
-    private void OnTriggerEnter2D(Collider2D other)
-    {
-        // Handle collision with player bullet
-        if (other.CompareTag("PlayerBullet"))
-        {
-            TakeDamage(1);
-            Destroy(other.gameObject);
-        }
+            Die(true);
     }
 
     /// <summary>
-    /// Configure enemy properties (called by spawner)
+    /// Remove the enemy. When <paramref name="awardScore"/> is true the player
+    /// gains points and a power-up may drop (i.e. killed by a bullet).
     /// </summary>
-    public void Configure(float speed, int health, int score, bool shooting)
+    public void Die(bool awardScore)
     {
-        moveSpeed = speed;
-        maxHealth = health;
-        currentHealth = health;
-        scoreValue = score;
-        canShoot = shooting;
+        if (awardScore)
+        {
+            GameManager.Instance?.AddScore(scoreValue);
+            TryDropPowerUp();
+        }
+        Destroy(gameObject);
+    }
+
+    private void TryDropPowerUp()
+    {
+        if (powerUpPrefab != null && Random.value <= dropChance)
+            Instantiate(powerUpPrefab, transform.position, Quaternion.identity);
     }
 }

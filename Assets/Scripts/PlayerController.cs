@@ -1,172 +1,178 @@
 using UnityEngine;
 
 /// <summary>
-/// Controls the player ship movement, shooting, and health management.
+/// Handles player ship movement (WASD / arrow keys), screen clamping and
+/// shooting (spacebar). Also manages the rapid-fire and shield power-up states.
 /// </summary>
+[RequireComponent(typeof(Collider2D))]
 public class PlayerController : MonoBehaviour
 {
-    [Header("Movement Settings")]
-    [SerializeField] private float moveSpeed = 8f;
-    [SerializeField] private float horizontalBoundary = 8f;
-    [SerializeField] private float verticalBoundaryTop = 4f;
-    [SerializeField] private float verticalBoundaryBottom = -4f;
+    [Header("Movement")]
+    [Tooltip("Movement speed in world units per second.")]
+    public float moveSpeed = 8f;
 
-    [Header("Shooting Settings")]
-    [SerializeField] private GameObject bulletPrefab;
-    [SerializeField] private Transform firePoint;
-    [SerializeField] private float fireRate = 0.25f;
+    [Header("Shooting")]
+    [Tooltip("Bullet prefab fired by the player.")]
+    public GameObject bulletPrefab;
+    [Tooltip("Where bullets spawn (usually a child at the ship's nose).")]
+    public Transform firePoint;
+    [Tooltip("Seconds between shots under normal fire.")]
+    public float fireCooldown = 0.25f;
+    [Tooltip("Speed given to spawned bullets.")]
+    public float bulletSpeed = 12f;
 
-    [Header("Health Settings")]
-    [SerializeField] private int maxHealth = 3;
+    [Header("Power-up Tuning")]
+    [Tooltip("Fire cooldown while rapid-fire is active.")]
+    public float rapidFireCooldown = 0.08f;
+    [Tooltip("How long rapid-fire lasts (seconds).")]
+    public float rapidFireDuration = 6f;
+    [Tooltip("How long the shield lasts (seconds).")]
+    public float shieldDuration = 6f;
 
-    private int currentHealth;
-    private float nextFireTime = 0f;
-    private bool canControl = true;
+    [Header("Power-up Visuals (optional)")]
+    [Tooltip("Child object enabled while the shield is active.")]
+    public GameObject shieldVisual;
 
-    public int CurrentHealth => currentHealth;
-    public int MaxHealth => maxHealth;
+    // Runtime state
+    private float fireTimer;
+    private float rapidFireTimer;
+    private float shieldTimer;
+    private bool shieldActive;
+    private Camera mainCamera;
+    private Vector2 shipHalfSize;
+
+    public bool ShieldActive => shieldActive;
 
     private void Start()
     {
-        currentHealth = maxHealth;
-        UpdateHealthUI();
+        mainCamera = Camera.main;
+
+        // Cache half the sprite size so we can keep the ship fully on-screen.
+        SpriteRenderer sr = GetComponent<SpriteRenderer>();
+        shipHalfSize = sr != null ? sr.bounds.extents : new Vector2(0.5f, 0.5f);
+
+        if (shieldVisual != null) shieldVisual.SetActive(false);
     }
 
     private void Update()
     {
-        if (!canControl || GameManager.Instance == null || GameManager.Instance.IsGameOver)
+        if (GameManager.Instance != null && GameManager.Instance.IsGameOver)
             return;
 
         HandleMovement();
         HandleShooting();
+        UpdatePowerUpTimers();
     }
 
+    /// <summary>Read input and move the ship, clamping to the camera view.</summary>
     private void HandleMovement()
     {
-        float horizontalInput = Input.GetAxis("Horizontal");
-        float verticalInput = Input.GetAxis("Vertical");
+        // GetAxisRaw covers both WASD and arrow keys via Unity's default input.
+        float h = Input.GetAxisRaw("Horizontal");
+        float v = Input.GetAxisRaw("Vertical");
 
-        // WASD and Arrow keys are both mapped to Horizontal/Vertical by default in Unity
-        Vector3 movement = new Vector3(horizontalInput, verticalInput, 0f) * moveSpeed * Time.deltaTime;
-        transform.Translate(movement, Space.World);
+        Vector3 dir = new Vector3(h, v, 0f).normalized;
+        transform.position += dir * moveSpeed * Time.deltaTime;
 
-        // Clamp position to screen boundaries
-        float clampedX = Mathf.Clamp(transform.position.x, -horizontalBoundary, horizontalBoundary);
-        float clampedY = Mathf.Clamp(transform.position.y, verticalBoundaryBottom, verticalBoundaryTop);
-        transform.position = new Vector3(clampedX, clampedY, transform.position.z);
+        ClampToScreen();
     }
 
+    /// <summary>Keep the ship inside the visible camera bounds.</summary>
+    private void ClampToScreen()
+    {
+        if (mainCamera == null) return;
+
+        Vector3 min = mainCamera.ViewportToWorldPoint(new Vector3(0, 0, 0));
+        Vector3 max = mainCamera.ViewportToWorldPoint(new Vector3(1, 1, 0));
+
+        Vector3 p = transform.position;
+        p.x = Mathf.Clamp(p.x, min.x + shipHalfSize.x, max.x - shipHalfSize.x);
+        p.y = Mathf.Clamp(p.y, min.y + shipHalfSize.y, max.y - shipHalfSize.y);
+        transform.position = p;
+    }
+
+    /// <summary>Fire bullets on spacebar respecting the current cooldown.</summary>
     private void HandleShooting()
     {
-        if (Input.GetKey(KeyCode.Space) && Time.time >= nextFireTime)
+        fireTimer -= Time.deltaTime;
+
+        bool rapid = rapidFireTimer > 0f;
+        float cooldown = rapid ? rapidFireCooldown : fireCooldown;
+
+        if (Input.GetKey(KeyCode.Space) && fireTimer <= 0f && bulletPrefab != null)
         {
-            Shoot();
-            nextFireTime = Time.time + fireRate;
+            Fire();
+            fireTimer = cooldown;
         }
     }
 
-    private void Shoot()
+    private void Fire()
     {
-        if (bulletPrefab == null)
-        {
-            Debug.LogWarning("Bullet prefab not assigned to PlayerController!");
-            return;
-        }
+        Vector3 spawnPos = firePoint != null ? firePoint.position : transform.position;
+        GameObject bulletObj = Instantiate(bulletPrefab, spawnPos, Quaternion.identity);
 
-        Vector3 spawnPosition = firePoint != null ? firePoint.position : transform.position + Vector3.up * 0.5f;
-        GameObject bullet = Instantiate(bulletPrefab, spawnPosition, Quaternion.identity);
-        
-        BulletController bulletController = bullet.GetComponent<BulletController>();
-        if (bulletController != null)
+        Bullet bullet = bulletObj.GetComponent<Bullet>();
+        if (bullet != null)
         {
-            bulletController.Initialize(true, Vector3.up);
+            // Player bullets travel up and only hit enemies.
+            bullet.Initialize(Vector2.up, bulletSpeed, Bullet.Owner.Player);
         }
     }
 
-    public void TakeDamage(int damage)
+    /// <summary>Count down active power-up timers each frame.</summary>
+    private void UpdatePowerUpTimers()
     {
-        currentHealth -= damage;
-        currentHealth = Mathf.Max(currentHealth, 0);
-        
-        UpdateHealthUI();
+        if (rapidFireTimer > 0f) rapidFireTimer -= Time.deltaTime;
 
-        if (currentHealth <= 0)
+        if (shieldActive)
         {
-            Die();
+            shieldTimer -= Time.deltaTime;
+            if (shieldTimer <= 0f)
+            {
+                shieldActive = false;
+                if (shieldVisual != null) shieldVisual.SetActive(false);
+            }
         }
     }
 
-    private void UpdateHealthUI()
+    /// <summary>Called by a power-up pickup to enable rapid fire.</summary>
+    public void ActivateRapidFire()
     {
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.UpdateHealth(currentHealth, maxHealth);
-        }
+        rapidFireTimer = rapidFireDuration;
     }
 
-    private void Die()
+    /// <summary>Called by a power-up pickup to enable the shield.</summary>
+    public void ActivateShield()
     {
-        canControl = false;
-        
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.GameOver();
-        }
+        shieldActive = true;
+        shieldTimer = shieldDuration;
+        if (shieldVisual != null) shieldVisual.SetActive(true);
+    }
 
-        // Visual feedback - disable renderer instead of destroying
-        SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null)
-        {
-            spriteRenderer.enabled = false;
-        }
+    /// <summary>
+    /// Apply damage to the player. Returns true if damage was absorbed by the
+    /// shield (so the caller knows the hit was blocked).
+    /// </summary>
+    public bool TakeDamage(int amount)
+    {
+        if (shieldActive)
+            return true; // shield absorbs the hit, no health lost
 
-        // Disable collider
-        Collider2D col = GetComponent<Collider2D>();
-        if (col != null)
-        {
-            col.enabled = false;
-        }
+        GameManager.Instance?.DamagePlayer(amount);
+        return false;
     }
 
     private void OnTriggerEnter2D(Collider2D other)
     {
-        // Handle collision with enemy
+        // Direct collision with an enemy ship damages the player.
         if (other.CompareTag("Enemy"))
         {
-            TakeDamage(1);
-            
             EnemyController enemy = other.GetComponent<EnemyController>();
-            if (enemy != null)
-            {
-                enemy.TakeDamage(enemy.MaxHealth); // Destroy enemy on collision
-            }
-        }
-        // Handle collision with enemy bullet
-        else if (other.CompareTag("EnemyBullet"))
-        {
-            TakeDamage(1);
-            Destroy(other.gameObject);
-        }
-    }
+            int contactDamage = enemy != null ? enemy.contactDamage : 25;
 
-    public void ResetPlayer()
-    {
-        currentHealth = maxHealth;
-        canControl = true;
-        transform.position = new Vector3(0f, -3f, 0f);
-        
-        SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null)
-        {
-            spriteRenderer.enabled = true;
+            bool blocked = TakeDamage(contactDamage);
+            // The enemy is destroyed on contact regardless of the shield.
+            if (enemy != null) enemy.Die(false);
         }
-
-        Collider2D col = GetComponent<Collider2D>();
-        if (col != null)
-        {
-            col.enabled = true;
-        }
-
-        UpdateHealthUI();
     }
 }

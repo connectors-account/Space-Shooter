@@ -2,161 +2,115 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Manages overall game state, score, and game flow.
+/// Central game state controller. Tracks score, player health and the
+/// running/game-over state. Implemented as a lightweight singleton so any
+/// script can reach it through GameManager.Instance.
 /// </summary>
 public class GameManager : MonoBehaviour
 {
     public static GameManager Instance { get; private set; }
 
-    [Header("Game Settings")]
-    [SerializeField] private int startingScore = 0;
+    [Header("Player Settings")]
+    [Tooltip("Health the player starts each run with.")]
+    public int startingHealth = 100;
 
-    private int currentScore;
-    private bool isGameOver = false;
-    private bool isPaused = false;
-
-    public int CurrentScore => currentScore;
-    public bool IsGameOver => isGameOver;
-    public bool IsPaused => isPaused;
+    // Runtime state
+    public int Score { get; private set; }
+    public int Health { get; private set; }
+    public bool IsGameOver { get; private set; }
 
     private void Awake()
     {
-        // Singleton pattern
-        if (Instance == null)
-        {
-            Instance = this;
-        }
-        else
+        // Enforce a single instance. If a duplicate exists (e.g. when reloading
+        // the scene) destroy the new one so references stay valid.
+        if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
             return;
         }
+        Instance = this;
     }
 
     private void Start()
     {
-        StartGame();
+        ResetGame();
     }
 
-    private void Update()
+    /// <summary>Reset all runtime values to start a fresh run.</summary>
+    public void ResetGame()
     {
-        HandlePauseInput();
-        HandleRestartInput();
-    }
+        Score = 0;
+        Health = startingHealth;
+        IsGameOver = false;
+        Time.timeScale = 1f; // make sure the game is un-paused
 
-    private void HandlePauseInput()
-    {
-        if (Input.GetKeyDown(KeyCode.Escape) && !isGameOver)
-        {
-            TogglePause();
-        }
-    }
-
-    private void HandleRestartInput()
-    {
-        if (isGameOver && Input.GetKeyDown(KeyCode.R))
-        {
-            RestartGame();
-        }
-    }
-
-    public void StartGame()
-    {
-        currentScore = startingScore;
-        isGameOver = false;
-        isPaused = false;
-        Time.timeScale = 1f;
-
-        UpdateScoreUI();
-
+        // Push initial values to the HUD if one is present.
         if (UIManager.Instance != null)
         {
+            UIManager.Instance.UpdateScore(Score);
+            UIManager.Instance.UpdateHealth(Health, startingHealth);
             UIManager.Instance.HideGameOver();
-            UIManager.Instance.HidePauseMenu();
         }
     }
 
-    public void AddScore(int points)
+    /// <summary>Add points to the score and refresh the HUD.</summary>
+    public void AddScore(int amount)
     {
-        if (isGameOver)
-            return;
-
-        currentScore += points;
-        UpdateScoreUI();
-    }
-
-    private void UpdateScoreUI()
-    {
+        if (IsGameOver) return;
+        Score += amount;
         if (UIManager.Instance != null)
-        {
-            UIManager.Instance.UpdateScore(currentScore);
-        }
+            UIManager.Instance.UpdateScore(Score);
     }
 
+    /// <summary>Apply damage to the player. Triggers game over at zero.</summary>
+    public void DamagePlayer(int amount)
+    {
+        if (IsGameOver) return;
+
+        Health -= amount;
+        if (Health < 0) Health = 0;
+
+        if (UIManager.Instance != null)
+            UIManager.Instance.UpdateHealth(Health, startingHealth);
+
+        if (Health <= 0)
+            GameOver();
+    }
+
+    /// <summary>Heal the player without exceeding the starting maximum.</summary>
+    public void HealPlayer(int amount)
+    {
+        if (IsGameOver) return;
+
+        Health += amount;
+        if (Health > startingHealth) Health = startingHealth;
+
+        if (UIManager.Instance != null)
+            UIManager.Instance.UpdateHealth(Health, startingHealth);
+    }
+
+    /// <summary>End the current run and show the game-over screen.</summary>
     public void GameOver()
     {
-        if (isGameOver)
-            return;
-
-        isGameOver = true;
-        Time.timeScale = 0f;
-
-        // Save high score
-        int highScore = PlayerPrefs.GetInt("HighScore", 0);
-        if (currentScore > highScore)
-        {
-            PlayerPrefs.SetInt("HighScore", currentScore);
-            PlayerPrefs.Save();
-        }
+        if (IsGameOver) return;
+        IsGameOver = true;
+        Time.timeScale = 0f; // freeze the action
 
         if (UIManager.Instance != null)
-        {
-            UIManager.Instance.ShowGameOver(currentScore, PlayerPrefs.GetInt("HighScore", 0));
-        }
-
-        Debug.Log($"Game Over! Final Score: {currentScore}");
+            UIManager.Instance.ShowGameOver(Score);
     }
 
+    /// <summary>Reload the gameplay scene to restart.</summary>
     public void RestartGame()
     {
         Time.timeScale = 1f;
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
 
-    public void TogglePause()
+    /// <summary>Return to the main menu scene (build index 0).</summary>
+    public void GoToMainMenu()
     {
-        isPaused = !isPaused;
-        Time.timeScale = isPaused ? 0f : 1f;
-
-        if (UIManager.Instance != null)
-        {
-            if (isPaused)
-            {
-                UIManager.Instance.ShowPauseMenu();
-            }
-            else
-            {
-                UIManager.Instance.HidePauseMenu();
-            }
-        }
-    }
-
-    public void QuitGame()
-    {
-        Debug.Log("Quitting game...");
-        
-        #if UNITY_EDITOR
-            UnityEditor.EditorApplication.isPlaying = false;
-        #else
-            Application.Quit();
-        #endif
-    }
-
-    private void OnDestroy()
-    {
-        if (Instance == this)
-        {
-            Instance = null;
-        }
+        Time.timeScale = 1f;
+        SceneManager.LoadScene(0);
     }
 }
