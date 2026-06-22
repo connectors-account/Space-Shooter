@@ -1,172 +1,182 @@
 using UnityEngine;
 
 /// <summary>
-/// Controls the player ship movement, shooting, and health management.
+/// Controls the player ship: movement via WASD/Arrow keys, shooting with
+/// Space, screen-bounds clamping, and the active state for power-ups
+/// (rapid fire and shield). Works together with HealthSystem for damage.
 /// </summary>
+[RequireComponent(typeof(HealthSystem))]
 public class PlayerController : MonoBehaviour
 {
-    [Header("Movement Settings")]
-    [SerializeField] private float moveSpeed = 8f;
-    [SerializeField] private float horizontalBoundary = 8f;
-    [SerializeField] private float verticalBoundaryTop = 4f;
-    [SerializeField] private float verticalBoundaryBottom = -4f;
+    [Header("Movement")]
+    [Tooltip("Movement speed in units/second.")]
+    public float moveSpeed = 8f;
 
-    [Header("Shooting Settings")]
-    [SerializeField] private GameObject bulletPrefab;
-    [SerializeField] private Transform firePoint;
-    [SerializeField] private float fireRate = 0.25f;
+    [Tooltip("Half-size of the playable area horizontally (clamps the ship).")]
+    public float horizontalLimit = 8.5f;
 
-    [Header("Health Settings")]
-    [SerializeField] private int maxHealth = 3;
+    [Tooltip("Half-size of the playable area vertically.")]
+    public float verticalLimit = 4.5f;
 
-    private int currentHealth;
-    private float nextFireTime = 0f;
-    private bool canControl = true;
+    [Header("Shooting")]
+    [Tooltip("The bullet pool used to fire projectiles.")]
+    public BulletPool bulletPool;
 
-    public int CurrentHealth => currentHealth;
-    public int MaxHealth => maxHealth;
+    [Tooltip("Spawn point for bullets. If null, the ship's position is used.")]
+    public Transform firePoint;
 
-    private void Start()
+    [Tooltip("Damage each player bullet deals.")]
+    public int bulletDamage = 25;
+
+    [Tooltip("Normal seconds between shots.")]
+    public float fireCooldown = 0.25f;
+
+    [Tooltip("Fire cooldown while the rapid-fire power-up is active.")]
+    public float rapidFireCooldown = 0.08f;
+
+    [Header("Power-up Visuals (optional)")]
+    [Tooltip("A child GameObject (e.g. a glowing ring) toggled while shielded.")]
+    public GameObject shieldVisual;
+
+    // Runtime state
+    private HealthSystem health;
+    private float lastFireTime;
+    private bool rapidFireActive;
+    private float rapidFireEndTime;
+    private float shieldEndTime;
+
+    private void Awake()
     {
-        currentHealth = maxHealth;
-        UpdateHealthUI();
+        health = GetComponent<HealthSystem>();
+    }
+
+    private void OnEnable()
+    {
+        // Subscribe to our own death so we can tell the GameManager.
+        if (health != null)
+            health.OnDeath += HandleDeath;
+    }
+
+    private void OnDisable()
+    {
+        if (health != null)
+            health.OnDeath -= HandleDeath;
     }
 
     private void Update()
     {
-        if (!canControl || GameManager.Instance == null || GameManager.Instance.IsGameOver)
+        // Only respond to input while actually playing.
+        if (GameManager.Instance == null || GameManager.Instance.CurrentState != GameManager.GameState.Playing)
             return;
 
         HandleMovement();
         HandleShooting();
+        HandlePowerUpTimers();
     }
 
+    /// <summary>Read input axes and move the ship, clamped to the screen.</summary>
     private void HandleMovement()
     {
-        float horizontalInput = Input.GetAxis("Horizontal");
-        float verticalInput = Input.GetAxis("Vertical");
+        // GetAxisRaw covers both WASD and Arrow keys by default in Unity.
+        float h = Input.GetAxisRaw("Horizontal");
+        float v = Input.GetAxisRaw("Vertical");
 
-        // WASD and Arrow keys are both mapped to Horizontal/Vertical by default in Unity
-        Vector3 movement = new Vector3(horizontalInput, verticalInput, 0f) * moveSpeed * Time.deltaTime;
-        transform.Translate(movement, Space.World);
+        Vector3 move = new Vector3(h, v, 0f).normalized * moveSpeed * Time.deltaTime;
+        Vector3 newPos = transform.position + move;
 
-        // Clamp position to screen boundaries
-        float clampedX = Mathf.Clamp(transform.position.x, -horizontalBoundary, horizontalBoundary);
-        float clampedY = Mathf.Clamp(transform.position.y, verticalBoundaryBottom, verticalBoundaryTop);
-        transform.position = new Vector3(clampedX, clampedY, transform.position.z);
+        // Keep the ship inside the visible play area.
+        newPos.x = Mathf.Clamp(newPos.x, -horizontalLimit, horizontalLimit);
+        newPos.y = Mathf.Clamp(newPos.y, -verticalLimit, verticalLimit);
+
+        transform.position = newPos;
     }
 
+    /// <summary>Fire a bullet on Space, respecting the current cooldown.</summary>
     private void HandleShooting()
     {
-        if (Input.GetKey(KeyCode.Space) && Time.time >= nextFireTime)
+        float cooldown = rapidFireActive ? rapidFireCooldown : fireCooldown;
+
+        if (Input.GetKey(KeyCode.Space) && Time.time - lastFireTime >= cooldown)
         {
             Shoot();
-            nextFireTime = Time.time + fireRate;
+            lastFireTime = Time.time;
         }
     }
 
     private void Shoot()
     {
-        if (bulletPrefab == null)
-        {
-            Debug.LogWarning("Bullet prefab not assigned to PlayerController!");
+        if (bulletPool == null)
             return;
-        }
 
-        Vector3 spawnPosition = firePoint != null ? firePoint.position : transform.position + Vector3.up * 0.5f;
-        GameObject bullet = Instantiate(bulletPrefab, spawnPosition, Quaternion.identity);
-        
-        BulletController bulletController = bullet.GetComponent<BulletController>();
-        if (bulletController != null)
+        Vector3 spawnPos = firePoint != null ? firePoint.position : transform.position;
+        // Player bullets travel up and damage enemies.
+        bulletPool.GetBullet(spawnPos, Vector2.up, "Enemy", bulletDamage);
+    }
+
+    /// <summary>Expire rapid-fire and shield power-ups when their timers run out.</summary>
+    private void HandlePowerUpTimers()
+    {
+        if (rapidFireActive && Time.time >= rapidFireEndTime)
+            rapidFireActive = false;
+
+        if (health.shieldActive && Time.time >= shieldEndTime)
         {
-            bulletController.Initialize(true, Vector3.up);
+            health.SetShield(false);
+            if (shieldVisual != null)
+                shieldVisual.SetActive(false);
         }
     }
 
-    public void TakeDamage(int damage)
-    {
-        currentHealth -= damage;
-        currentHealth = Mathf.Max(currentHealth, 0);
-        
-        UpdateHealthUI();
+    // -------- Power-up activation (called by PowerUp.cs) --------
 
-        if (currentHealth <= 0)
-        {
-            Die();
-        }
+    /// <summary>Heal the player by a flat amount.</summary>
+    public void ApplyHealth(int amount)
+    {
+        health.Heal(amount);
     }
 
-    private void UpdateHealthUI()
+    /// <summary>Enable rapid fire for the given duration (refreshes if re-collected).</summary>
+    public void ApplyRapidFire(float duration)
     {
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.UpdateHealth(currentHealth, maxHealth);
-        }
+        rapidFireActive = true;
+        rapidFireEndTime = Time.time + duration;
     }
 
-    private void Die()
+    /// <summary>Enable an invulnerability shield for the given duration.</summary>
+    public void ApplyShield(float duration)
     {
-        canControl = false;
-        
+        health.SetShield(true);
+        shieldEndTime = Time.time + duration;
+        if (shieldVisual != null)
+            shieldVisual.SetActive(true);
+    }
+
+    /// <summary>Reset all transient state at the start of a new game.</summary>
+    public void ResetState()
+    {
+        rapidFireActive = false;
+        lastFireTime = 0f;
+        if (shieldVisual != null)
+            shieldVisual.SetActive(false);
+    }
+
+    /// <summary>Player died -> notify the GameManager to end the game.</summary>
+    private void HandleDeath()
+    {
         if (GameManager.Instance != null)
-        {
-            GameManager.Instance.GameOver();
-        }
-
-        // Visual feedback - disable renderer instead of destroying
-        SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null)
-        {
-            spriteRenderer.enabled = false;
-        }
-
-        // Disable collider
-        Collider2D col = GetComponent<Collider2D>();
-        if (col != null)
-        {
-            col.enabled = false;
-        }
+            GameManager.Instance.EndGame();
     }
 
     private void OnTriggerEnter2D(Collider2D other)
     {
-        // Handle collision with enemy
+        // Direct collision with an enemy ship damages the player.
         if (other.CompareTag("Enemy"))
         {
-            TakeDamage(1);
-            
-            EnemyController enemy = other.GetComponent<EnemyController>();
-            if (enemy != null)
-            {
-                enemy.TakeDamage(enemy.MaxHealth); // Destroy enemy on collision
-            }
+            health.TakeDamage(34); // ~3 hits from full health
+            // Also damage/destroy the enemy on the crash.
+            var enemyHealth = other.GetComponent<HealthSystem>();
+            if (enemyHealth != null)
+                enemyHealth.TakeDamage(9999);
         }
-        // Handle collision with enemy bullet
-        else if (other.CompareTag("EnemyBullet"))
-        {
-            TakeDamage(1);
-            Destroy(other.gameObject);
-        }
-    }
-
-    public void ResetPlayer()
-    {
-        currentHealth = maxHealth;
-        canControl = true;
-        transform.position = new Vector3(0f, -3f, 0f);
-        
-        SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null)
-        {
-            spriteRenderer.enabled = true;
-        }
-
-        Collider2D col = GetComponent<Collider2D>();
-        if (col != null)
-        {
-            col.enabled = true;
-        }
-
-        UpdateHealthUI();
     }
 }
