@@ -1,315 +1,209 @@
 using UnityEngine;
 
-namespace SpaceShooter.Player
+namespace SpaceShooter
 {
     /// <summary>
-    /// Controls player ship movement, shooting, health, and power-up states.
-    /// Attach to the Player ship GameObject.
+    /// Controls the player ship: movement (WASD / Arrow keys), shooting (Space)
+    /// with a fire cooldown, weapon upgrade levels, shield handling and death.
+    /// Movement is clamped to the visible camera bounds.
     /// </summary>
+    [RequireComponent(typeof(HealthSystem))]
     public class PlayerController : MonoBehaviour
     {
-        [Header("Movement Settings")]
+        [Header("Movement")]
         [SerializeField] private float moveSpeed = 8f;
-        [SerializeField] private float smoothTime = 0.05f;
+        [SerializeField] private float padding = 0.5f;
 
-        [Header("Boundaries (Viewport)")]
-        [SerializeField] private float minX = -8.5f;
-        [SerializeField] private float maxX = 8.5f;
-        [SerializeField] private float minY = -4.5f;
-        [SerializeField] private float maxY = 4.5f;
-
-        [Header("Health Settings")]
-        [SerializeField] private int maxHealth = 100;
-        [SerializeField] private float invincibilityDuration = 1.5f;
-
-        [Header("Shooting Settings")]
+        [Header("Shooting")]
         [SerializeField] private GameObject bulletPrefab;
-        [SerializeField] private Transform firePoint;
-        [SerializeField] private float fireRate = 0.25f;
-        [SerializeField] private float rapidFireRate = 0.1f;
-        [SerializeField] private float rapidFireDuration = 5f;
+        [SerializeField] private Transform[] firePoints;
+        [SerializeField] private float fireCooldown = 0.25f;
+        [SerializeField] private float bulletSpeed = 14f;
+        [SerializeField] private float bulletDamage = 25f;
 
-        [Header("Shield Settings")]
-        [SerializeField] private float shieldDuration = 8f;
-        [SerializeField] private GameObject shieldVisual; // child object for shield effect
+        [Header("Weapon Upgrade")]
+        [SerializeField] private int weaponLevel = 1;
+        [SerializeField] private int maxWeaponLevel = 3;
 
-        [Header("Visual Feedback")]
-        [SerializeField] private SpriteRenderer spriteRenderer;
-        [SerializeField] private Color damageFlashColor = Color.red;
-        [SerializeField] private float flashDuration = 0.1f;
+        [Header("Visuals")]
+        [SerializeField] private GameObject shieldVisual;
 
-        // ---- Runtime State ----
-        private int currentHealth;
-        private float nextFireTime;
-        private float currentFireRate;
-        private bool isRapidFireActive;
-        private float rapidFireEndTime;
-        private bool isShieldActive;
-        private float shieldEndTime;
-        private bool isInvincible;
-        private float invincibilityEndTime;
-        private Vector2 velocity;
-        private Color originalColor;
-        private bool isDead;
+        private HealthSystem health;
+        private float fireTimer;
+        private Camera cam;
+        private Vector2 minBounds;
+        private Vector2 maxBounds;
+        private bool controlsEnabled = true;
 
-        // ---- Public Properties ----
-        public int CurrentHealth => currentHealth;
-        public int MaxHealth => maxHealth;
-        public bool IsShieldActive => isShieldActive;
-        public bool IsRapidFireActive => isRapidFireActive;
-        public bool IsDead => isDead;
-
-        // ---- Events ----
-        public event System.Action<int, int> OnHealthChanged;  // currentHP, maxHP
-        public event System.Action OnPlayerDeath;
+        public int WeaponLevel => weaponLevel;
 
         private void Awake()
         {
-            if (spriteRenderer == null)
-                spriteRenderer = GetComponent<SpriteRenderer>();
+            health = GetComponent<HealthSystem>();
+            cam = Camera.main;
+        }
+
+        private void OnEnable()
+        {
+            if (health != null)
+            {
+                health.OnDeath += HandleDeath;
+                health.OnShieldChanged += HandleShieldChanged;
+            }
+        }
+
+        private void OnDisable()
+        {
+            if (health != null)
+            {
+                health.OnDeath -= HandleDeath;
+                health.OnShieldChanged -= HandleShieldChanged;
+            }
         }
 
         private void Start()
         {
-            currentHealth = maxHealth;
-            currentFireRate = fireRate;
-            isDead = false;
-
-            if (spriteRenderer != null)
-                originalColor = spriteRenderer.color;
-
-            if (shieldVisual != null)
-                shieldVisual.SetActive(false);
-
-            OnHealthChanged?.Invoke(currentHealth, maxHealth);
+            CalculateBounds();
+            if (shieldVisual != null) shieldVisual.SetActive(false);
         }
 
         private void Update()
         {
-            if (isDead) return;
+            if (!controlsEnabled) return;
+            if (GameManager.Instance != null && GameManager.Instance.CurrentState != GameState.Playing) return;
 
             HandleMovement();
             HandleShooting();
-            HandlePowerUpTimers();
-            HandleInvincibility();
         }
 
-        // ========== MOVEMENT ==========
+        private void CalculateBounds()
+        {
+            if (cam == null) cam = Camera.main;
+            if (cam == null) return;
+
+            Vector3 min = cam.ViewportToWorldPoint(new Vector3(0f, 0f, 0f));
+            Vector3 max = cam.ViewportToWorldPoint(new Vector3(1f, 1f, 0f));
+            minBounds = new Vector2(min.x + padding, min.y + padding);
+            maxBounds = new Vector2(max.x - padding, max.y - padding);
+        }
+
         private void HandleMovement()
         {
-            float horizontal = Input.GetAxisRaw("Horizontal");
-            float vertical = Input.GetAxisRaw("Vertical");
+            float h = Input.GetAxisRaw("Horizontal");
+            float v = Input.GetAxisRaw("Vertical");
 
-            Vector2 targetVelocity = new Vector2(horizontal, vertical).normalized * moveSpeed;
-            Vector2 currentVel = velocity;
-            velocity = Vector2.SmoothDamp(velocity, targetVelocity, ref currentVel, smoothTime);
+            Vector3 move = new Vector3(h, v, 0f).normalized * moveSpeed * Time.deltaTime;
+            Vector3 newPos = transform.position + move;
 
-            Vector3 newPosition = transform.position + (Vector3)velocity * Time.deltaTime;
+            newPos.x = Mathf.Clamp(newPos.x, minBounds.x, maxBounds.x);
+            newPos.y = Mathf.Clamp(newPos.y, minBounds.y, maxBounds.y);
 
-            // Clamp to screen boundaries
-            newPosition.x = Mathf.Clamp(newPosition.x, minX, maxX);
-            newPosition.y = Mathf.Clamp(newPosition.y, minY, maxY);
-
-            transform.position = newPosition;
+            transform.position = newPos;
         }
 
-        // ========== SHOOTING ==========
         private void HandleShooting()
         {
-            if (Input.GetKey(KeyCode.Space) && Time.time >= nextFireTime)
+            fireTimer -= Time.deltaTime;
+
+            if (Input.GetKey(KeyCode.Space) && fireTimer <= 0f)
             {
-                FireBullet();
-                nextFireTime = Time.time + currentFireRate;
+                Shoot();
+                fireTimer = fireCooldown;
             }
         }
 
-        private void FireBullet()
+        private void Shoot()
         {
-            if (bulletPrefab == null || firePoint == null) return;
+            if (bulletPrefab == null || firePoints == null || firePoints.Length == 0) return;
 
-            GameObject bullet = Instantiate(bulletPrefab, firePoint.position, Quaternion.identity);
+            // Number of streams scales with weapon level.
+            switch (weaponLevel)
+            {
+                case 1:
+                    SpawnBullet(firePoints[0].position, Vector2.up);
+                    break;
+                case 2:
+                    SpawnBullet(firePoints[0].position + Vector3.left * 0.25f, Vector2.up);
+                    SpawnBullet(firePoints[0].position + Vector3.right * 0.25f, Vector2.up);
+                    break;
+                default: // level 3+: triple spread
+                    SpawnBullet(firePoints[0].position, Vector2.up);
+                    SpawnBullet(firePoints[0].position, new Vector2(-0.25f, 1f));
+                    SpawnBullet(firePoints[0].position, new Vector2(0.25f, 1f));
+                    break;
+            }
 
-            // Tag bullet as player bullet
-            bullet.tag = "PlayerBullet";
-
-            // Play shoot sound
-            Managers.AudioManager.Instance?.PlayShootSound();
+            AudioManager.Instance?.PlayPlayerShoot();
         }
 
-        // ========== HEALTH & DAMAGE ==========
-        public void TakeDamage(int damage)
+        private void SpawnBullet(Vector3 position, Vector2 dir)
         {
-            if (isDead || isInvincible || isShieldActive) return;
-
-            currentHealth -= damage;
-            currentHealth = Mathf.Max(currentHealth, 0);
-
-            OnHealthChanged?.Invoke(currentHealth, maxHealth);
-
-            // Visual feedback
-            StartCoroutine(DamageFlash());
-
-            // Brief invincibility after being hit
-            isInvincible = true;
-            invincibilityEndTime = Time.time + invincibilityDuration;
-
-            Managers.AudioManager.Instance?.PlayExplosionSound();
-
-            if (currentHealth <= 0)
+            GameObject bullet = Instantiate(bulletPrefab, position, Quaternion.identity);
+            BulletController bc = bullet.GetComponent<BulletController>();
+            if (bc != null)
             {
-                Die();
+                bc.Configure(BulletOwner.Player, dir, bulletSpeed, bulletDamage);
             }
         }
 
-        public void Heal(int amount)
-        {
-            if (isDead) return;
+        // ---------- Power-up effects ----------
 
-            currentHealth += amount;
-            currentHealth = Mathf.Min(currentHealth, maxHealth);
-            OnHealthChanged?.Invoke(currentHealth, maxHealth);
+        public void UpgradeWeapon()
+        {
+            weaponLevel = Mathf.Min(weaponLevel + 1, maxWeaponLevel);
+            AudioManager.Instance?.PlayPowerUp();
         }
 
-        private void Die()
+        public void AddHealth(float amount)
         {
-            isDead = true;
-            OnPlayerDeath?.Invoke();
-
-            Managers.AudioManager.Instance?.PlayExplosionSound();
-
-            // Disable the sprite but keep the object alive for game-over logic
-            if (spriteRenderer != null)
-                spriteRenderer.enabled = false;
-
-            // Disable collider
-            Collider2D col = GetComponent<Collider2D>();
-            if (col != null) col.enabled = false;
+            health.Heal(amount);
+            AudioManager.Instance?.PlayPowerUp();
         }
 
-        // ========== POWER-UPS ==========
-        public void ActivateRapidFire()
+        public void ActivateShield(float duration)
         {
-            isRapidFireActive = true;
-            currentFireRate = rapidFireRate;
-            rapidFireEndTime = Time.time + rapidFireDuration;
+            health.ActivateShield(duration);
+            AudioManager.Instance?.PlayPowerUp();
         }
 
-        public void ActivateShield()
-        {
-            isShieldActive = true;
-            shieldEndTime = Time.time + shieldDuration;
+        // ---------- State handling ----------
 
-            if (shieldVisual != null)
-                shieldVisual.SetActive(true);
+        private void HandleShieldChanged(bool active)
+        {
+            if (shieldVisual != null) shieldVisual.SetActive(active);
         }
 
-        private void HandlePowerUpTimers()
+        private void HandleDeath()
         {
-            // Rapid fire timer
-            if (isRapidFireActive && Time.time >= rapidFireEndTime)
-            {
-                isRapidFireActive = false;
-                currentFireRate = fireRate;
-            }
-
-            // Shield timer
-            if (isShieldActive && Time.time >= shieldEndTime)
-            {
-                isShieldActive = false;
-                if (shieldVisual != null)
-                    shieldVisual.SetActive(false);
-            }
+            controlsEnabled = false;
+            AudioManager.Instance?.PlayExplosion();
+            GameManager.Instance?.OnPlayerDied();
+            gameObject.SetActive(false);
         }
 
-        private void HandleInvincibility()
+        public void ResetPlayer(Vector3 startPosition)
         {
-            if (isInvincible && Time.time >= invincibilityEndTime)
-            {
-                isInvincible = false;
-                if (spriteRenderer != null)
-                    spriteRenderer.color = originalColor;
-            }
-
-            // Blink effect while invincible
-            if (isInvincible && spriteRenderer != null)
-            {
-                float alpha = Mathf.PingPong(Time.time * 10f, 1f) > 0.5f ? 1f : 0.3f;
-                Color c = originalColor;
-                c.a = alpha;
-                spriteRenderer.color = c;
-            }
+            transform.position = startPosition;
+            weaponLevel = 1;
+            controlsEnabled = true;
+            fireTimer = 0f;
+            gameObject.SetActive(true);
+            health.ResetHealth();
+            CalculateBounds();
         }
 
-        // ========== VISUAL EFFECTS ==========
-        private System.Collections.IEnumerator DamageFlash()
-        {
-            if (spriteRenderer == null) yield break;
-
-            spriteRenderer.color = damageFlashColor;
-            yield return new WaitForSeconds(flashDuration);
-            spriteRenderer.color = originalColor;
-        }
-
-        // ========== COLLISION ==========
         private void OnTriggerEnter2D(Collider2D other)
         {
-            if (isDead) return;
-
-            // Collide with enemy bullets
-            if (other.CompareTag("EnemyBullet"))
-            {
-                Weapons.BulletController bullet = other.GetComponent<Weapons.BulletController>();
-                if (bullet != null)
-                {
-                    TakeDamage(bullet.Damage);
-                    Destroy(other.gameObject);
-                }
-            }
-
-            // Collide with enemies directly
+            // Direct collision with an enemy body damages the player and the enemy.
             if (other.CompareTag("Enemy"))
             {
-                TakeDamage(20);
-            }
-
-            // Collide with power-ups
-            if (other.CompareTag("PowerUp"))
-            {
-                PowerUps.PowerUpController powerUp = other.GetComponent<PowerUps.PowerUpController>();
-                if (powerUp != null)
+                EnemyController enemy = other.GetComponent<EnemyController>();
+                if (enemy != null)
                 {
-                    powerUp.ApplyEffect(this);
-                    Destroy(other.gameObject);
+                    health.TakeDamage(enemy.CollisionDamage);
+                    enemy.Die(false);
                 }
             }
-        }
-
-        /// <summary>
-        /// Resets the player to initial state (for restarting the game).
-        /// </summary>
-        public void ResetPlayer()
-        {
-            isDead = false;
-            currentHealth = maxHealth;
-            currentFireRate = fireRate;
-            isRapidFireActive = false;
-            isShieldActive = false;
-            isInvincible = false;
-            transform.position = new Vector3(0, -3f, 0);
-
-            if (spriteRenderer != null)
-            {
-                spriteRenderer.enabled = true;
-                spriteRenderer.color = originalColor;
-            }
-
-            Collider2D col = GetComponent<Collider2D>();
-            if (col != null) col.enabled = true;
-
-            if (shieldVisual != null)
-                shieldVisual.SetActive(false);
-
-            OnHealthChanged?.Invoke(currentHealth, maxHealth);
         }
     }
 }

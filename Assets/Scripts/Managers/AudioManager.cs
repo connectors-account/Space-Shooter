@@ -1,174 +1,96 @@
 using UnityEngine;
 
-namespace SpaceShooter.Managers
+namespace SpaceShooter
 {
     /// <summary>
-    /// Centralized audio manager using singleton pattern.
-    /// Manages all game sound effects.
+    /// Centralised sound effect and music manager (singleton).
+    /// All gameplay scripts call into this so audio is decoupled from logic.
+    /// Assign clips in the Inspector; any unassigned clip is simply skipped,
+    /// so the game runs fine even before audio assets are added.
     /// </summary>
     public class AudioManager : MonoBehaviour
     {
-        // ---- Singleton ----
         public static AudioManager Instance { get; private set; }
 
         [Header("Audio Sources")]
-        [SerializeField] private AudioSource sfxSource;        // For one-shot sound effects
-        [SerializeField] private AudioSource musicSource;      // For background music
+        [SerializeField] private AudioSource sfxSource;
+        [SerializeField] private AudioSource musicSource;
 
         [Header("Sound Effects")]
-        [SerializeField] private AudioClip shootClip;
+        [SerializeField] private AudioClip playerShootClip;
+        [SerializeField] private AudioClip enemyShootClip;
         [SerializeField] private AudioClip explosionClip;
         [SerializeField] private AudioClip powerUpClip;
-        [SerializeField] private AudioClip playerHitClip;
         [SerializeField] private AudioClip waveStartClip;
         [SerializeField] private AudioClip gameOverClip;
         [SerializeField] private AudioClip buttonClickClip;
 
-        [Header("Background Music")]
-        [SerializeField] private AudioClip menuMusic;
-        [SerializeField] private AudioClip gameMusic;
+        [Header("Music")]
+        [SerializeField] private AudioClip backgroundMusic;
 
-        [Header("Volume Settings")]
-        [SerializeField] [Range(0f, 1f)] private float sfxVolume = 0.7f;
-        [SerializeField] [Range(0f, 1f)] private float musicVolume = 0.4f;
+        [Header("Volumes")]
+        [Range(0f, 1f)] [SerializeField] private float sfxVolume = 0.8f;
+        [Range(0f, 1f)] [SerializeField] private float musicVolume = 0.4f;
 
         private void Awake()
         {
-            // Singleton setup
             if (Instance != null && Instance != this)
             {
                 Destroy(gameObject);
                 return;
             }
             Instance = this;
-            DontDestroyOnLoad(gameObject);
 
-            // Create audio sources if not assigned
+            // Auto-create audio sources if not assigned in the Inspector.
             if (sfxSource == null)
             {
                 sfxSource = gameObject.AddComponent<AudioSource>();
                 sfxSource.playOnAwake = false;
             }
-
             if (musicSource == null)
             {
                 musicSource = gameObject.AddComponent<AudioSource>();
                 musicSource.playOnAwake = false;
                 musicSource.loop = true;
             }
-
-            sfxSource.volume = sfxVolume;
-            musicSource.volume = musicVolume;
         }
 
-        // ========== SOUND EFFECT METHODS ==========
-
-        /// <summary>Play the shooting sound effect.</summary>
-        public void PlayShootSound()
-        {
-            PlaySFX(shootClip, 0.5f);
-        }
-
-        /// <summary>Play the explosion sound effect.</summary>
-        public void PlayExplosionSound()
-        {
-            PlaySFX(explosionClip);
-        }
-
-        /// <summary>Play the power-up pickup sound.</summary>
-        public void PlayPowerUpSound()
-        {
-            PlaySFX(powerUpClip);
-        }
-
-        /// <summary>Play the player hit sound.</summary>
-        public void PlayPlayerHitSound()
-        {
-            PlaySFX(playerHitClip);
-        }
-
-        /// <summary>Play the wave start sound.</summary>
-        public void PlayWaveStartSound()
-        {
-            PlaySFX(waveStartClip);
-        }
-
-        /// <summary>Play the game over sound.</summary>
-        public void PlayGameOverSound()
-        {
-            PlaySFX(gameOverClip);
-        }
-
-        /// <summary>Play button click sound.</summary>
-        public void PlayButtonClickSound()
-        {
-            PlaySFX(buttonClickClip, 0.6f);
-        }
-
-        // ========== MUSIC METHODS ==========
-
-        /// <summary>Play menu background music.</summary>
-        public void PlayMenuMusic()
-        {
-            PlayMusic(menuMusic);
-        }
-
-        /// <summary>Play gameplay background music.</summary>
-        public void PlayGameMusic()
-        {
-            PlayMusic(gameMusic);
-        }
-
-        /// <summary>Stop background music.</summary>
-        public void StopMusic()
-        {
-            if (musicSource != null)
-                musicSource.Stop();
-        }
-
-        // ========== VOLUME CONTROL ==========
-
-        public void SetSFXVolume(float volume)
-        {
-            sfxVolume = Mathf.Clamp01(volume);
-            if (sfxSource != null)
-                sfxSource.volume = sfxVolume;
-        }
-
-        public void SetMusicVolume(float volume)
-        {
-            musicVolume = Mathf.Clamp01(volume);
-            if (musicSource != null)
-                musicSource.volume = musicVolume;
-        }
-
-        // ========== INTERNAL HELPERS ==========
-
-        private void PlaySFX(AudioClip clip, float volumeScale = -1f)
+        private void PlaySfx(AudioClip clip)
         {
             if (clip == null || sfxSource == null) return;
-
-            float vol = volumeScale < 0 ? sfxVolume : volumeScale;
-            sfxSource.PlayOneShot(clip, vol);
+            sfxSource.PlayOneShot(clip, sfxVolume);
         }
 
-        private void PlayMusic(AudioClip clip)
+        // ---------- Public SFX API ----------
+        public void PlayPlayerShoot() => PlaySfx(playerShootClip);
+        public void PlayEnemyShoot() => PlaySfx(enemyShootClip);
+        public void PlayExplosion() => PlaySfx(explosionClip);
+        public void PlayPowerUp() => PlaySfx(powerUpClip);
+        public void PlayWaveStart() => PlaySfx(waveStartClip);
+        public void PlayGameOver() => PlaySfx(gameOverClip);
+        public void PlayButtonClick() => PlaySfx(buttonClickClip);
+
+        // ---------- Music ----------
+        public void PlayMusic()
         {
-            if (musicSource == null) return;
-
-            if (musicSource.clip == clip && musicSource.isPlaying) return;
-
-            musicSource.clip = clip;
+            if (backgroundMusic == null || musicSource == null) return;
+            if (musicSource.isPlaying) return;
+            musicSource.clip = backgroundMusic;
             musicSource.volume = musicVolume;
-
-            if (clip != null)
-                musicSource.Play();
+            musicSource.loop = true;
+            musicSource.Play();
         }
 
-        private void OnDestroy()
+        public void StopMusic()
         {
-            if (Instance == this)
-                Instance = null;
+            if (musicSource != null && musicSource.isPlaying) musicSource.Stop();
+        }
+
+        public void SetSfxVolume(float v) => sfxVolume = Mathf.Clamp01(v);
+        public void SetMusicVolume(float v)
+        {
+            musicVolume = Mathf.Clamp01(v);
+            if (musicSource != null) musicSource.volume = musicVolume;
         }
     }
 }

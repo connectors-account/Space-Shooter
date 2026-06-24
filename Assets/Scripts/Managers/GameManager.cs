@@ -1,214 +1,190 @@
+using System;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
-namespace SpaceShooter.Managers
+namespace SpaceShooter
 {
+    public enum GameState
+    {
+        MainMenu,
+        Playing,
+        Paused,
+        GameOver
+    }
+
     /// <summary>
-    /// Central game state manager. Handles score, wave progression, game states.
-    /// Singleton pattern — persists across scenes.
+    /// Central game-state controller (singleton). Owns the high-level flow:
+    /// menu → playing → paused → game over, plus lives and wave tracking.
+    /// Coordinates the player, spawner and UI.
     /// </summary>
     public class GameManager : MonoBehaviour
     {
-        // ---- Singleton ----
         public static GameManager Instance { get; private set; }
 
-        // ---- Game States ----
-        public enum GameState
-        {
-            MainMenu,
-            Playing,
-            Paused,
-            GameOver
-        }
+        [Header("Scene References")]
+        [SerializeField] private PlayerController player;
+        [SerializeField] private EnemySpawner spawner;
+        [SerializeField] private Transform playerSpawnPoint;
 
-        [Header("Game Settings")]
-        [SerializeField] private int startingWave = 1;
-        [SerializeField] private int enemiesPerWaveBase = 5;
-        [SerializeField] private int enemiesPerWaveIncrement = 3;
-        [SerializeField] private float waveCooldown = 3f;
+        [Header("Game Rules")]
+        [SerializeField] private int startingLives = 3;
 
-        // ---- Runtime State ----
         private GameState currentState = GameState.MainMenu;
-        private int score;
+        private int lives;
         private int currentWave;
-        private int enemiesRemainingInWave;
-        private int totalEnemiesKilledInWave;
-        private int highScore;
 
-        // ---- Public Properties ----
         public GameState CurrentState => currentState;
-        public int Score => score;
+        public int Lives => lives;
         public int CurrentWave => currentWave;
-        public int HighScore => highScore;
-        public int EnemiesRemainingInWave => enemiesRemainingInWave;
 
-        // ---- Events ----
-        public event System.Action<int> OnScoreChanged;
-        public event System.Action<int> OnWaveChanged;
-        public event System.Action<GameState> OnGameStateChanged;
-        public event System.Action OnWaveComplete;
+        public event Action<int> OnLivesChanged;
+        public event Action<GameState> OnStateChanged;
 
         private void Awake()
         {
-            // Singleton setup
             if (Instance != null && Instance != this)
             {
                 Destroy(gameObject);
                 return;
             }
             Instance = this;
-            DontDestroyOnLoad(gameObject);
-
-            // Load high score from PlayerPrefs
-            highScore = PlayerPrefs.GetInt("HighScore", 0);
         }
 
-        // ========== STATE MANAGEMENT ==========
-
-        /// <summary>Starts a new game from wave 1.</summary>
-        public void StartGame()
-        {
-            score = 0;
-            currentWave = 0;
-            totalEnemiesKilledInWave = 0;
-
-            SetState(GameState.Playing);
-            OnScoreChanged?.Invoke(score);
-
-            // Start first wave
-            StartNextWave();
-        }
-
-        /// <summary>Pauses or unpauses the game.</summary>
-        public void TogglePause()
-        {
-            if (currentState == GameState.Playing)
-            {
-                SetState(GameState.Paused);
-                Time.timeScale = 0f;
-            }
-            else if (currentState == GameState.Paused)
-            {
-                SetState(GameState.Playing);
-                Time.timeScale = 1f;
-            }
-        }
-
-        /// <summary>Triggers game over state.</summary>
-        public void GameOver()
-        {
-            SetState(GameState.GameOver);
-            Time.timeScale = 1f;
-
-            // Save high score
-            if (score > highScore)
-            {
-                highScore = score;
-                PlayerPrefs.SetInt("HighScore", highScore);
-                PlayerPrefs.Save();
-            }
-        }
-
-        /// <summary>Returns to main menu.</summary>
-        public void ReturnToMenu()
+        private void Start()
         {
             SetState(GameState.MainMenu);
             Time.timeScale = 1f;
-            score = 0;
-            currentWave = 0;
+
+            // Hide the player until the game starts.
+            if (player != null) player.gameObject.SetActive(false);
         }
 
-        /// <summary>Restarts the game.</summary>
+        private void Update()
+        {
+            if (Input.GetKeyDown(KeyCode.Escape))
+            {
+                if (currentState == GameState.Playing) PauseGame();
+                else if (currentState == GameState.Paused) ResumeGame();
+            }
+        }
+
+        // ---------- Flow control ----------
+
+        public void StartGame()
+        {
+            lives = startingLives;
+            currentWave = 0;
+            OnLivesChanged?.Invoke(lives);
+
+            ScoreManager.Instance?.ResetScore();
+
+            if (player != null)
+            {
+                Vector3 spawnPos = playerSpawnPoint != null ? playerSpawnPoint.position : Vector3.zero;
+                player.ResetPlayer(spawnPos);
+            }
+
+            SetState(GameState.Playing);
+            Time.timeScale = 1f;
+
+            spawner?.StartSpawning();
+            AudioManager.Instance?.PlayMusic();
+        }
+
+        public void PauseGame()
+        {
+            if (currentState != GameState.Playing) return;
+            SetState(GameState.Paused);
+            Time.timeScale = 0f;
+        }
+
+        public void ResumeGame()
+        {
+            if (currentState != GameState.Paused) return;
+            SetState(GameState.Playing);
+            Time.timeScale = 1f;
+        }
+
+        public void OnPlayerDied()
+        {
+            lives--;
+            OnLivesChanged?.Invoke(lives);
+
+            if (lives > 0)
+            {
+                // Respawn after a short delay.
+                Invoke(nameof(RespawnPlayer), 1.5f);
+            }
+            else
+            {
+                GameOver();
+            }
+        }
+
+        private void RespawnPlayer()
+        {
+            if (player == null) return;
+            Vector3 spawnPos = playerSpawnPoint != null ? playerSpawnPoint.position : Vector3.zero;
+            player.ResetPlayer(spawnPos);
+            player.ActivateShield(2.5f); // brief spawn protection
+        }
+
+        public void GameOver()
+        {
+            SetState(GameState.GameOver);
+            Time.timeScale = 0f;
+            spawner?.StopSpawning();
+            AudioManager.Instance?.StopMusic();
+            AudioManager.Instance?.PlayGameOver();
+            ScoreManager.Instance?.SaveHighScore();
+        }
+
         public void RestartGame()
         {
-            Time.timeScale = 1f;
+            // Clear any leftover enemies / bullets / power-ups.
+            ClearTaggedObjects("Enemy");
+            ClearTaggedObjects("Bullet");
+            ClearTaggedObjects("PowerUp");
             StartGame();
+        }
+
+        public void ReturnToMainMenu()
+        {
+            Time.timeScale = 1f;
+            spawner?.StopSpawning();
+            ClearTaggedObjects("Enemy");
+            ClearTaggedObjects("Bullet");
+            ClearTaggedObjects("PowerUp");
+            if (player != null) player.gameObject.SetActive(false);
+            AudioManager.Instance?.StopMusic();
+            SetState(GameState.MainMenu);
+        }
+
+        public void QuitGame()
+        {
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPlaying = false;
+#else
+            Application.Quit();
+#endif
+        }
+
+        // ---------- Helpers ----------
+
+        public void SetWave(int wave)
+        {
+            currentWave = wave;
         }
 
         private void SetState(GameState newState)
         {
             currentState = newState;
-            OnGameStateChanged?.Invoke(currentState);
+            OnStateChanged?.Invoke(currentState);
         }
 
-        // ========== SCORE ==========
-
-        /// <summary>Add to the player's score.</summary>
-        public void AddScore(int points)
+        private void ClearTaggedObjects(string tag)
         {
-            if (currentState != GameState.Playing) return;
-
-            score += points;
-            OnScoreChanged?.Invoke(score);
-        }
-
-        // ========== WAVE MANAGEMENT ==========
-
-        /// <summary>Starts the next wave.</summary>
-        public void StartNextWave()
-        {
-            currentWave++;
-            totalEnemiesKilledInWave = 0;
-            enemiesRemainingInWave = enemiesPerWaveBase + (currentWave - 1) * enemiesPerWaveIncrement;
-
-            OnWaveChanged?.Invoke(currentWave);
-
-            // Tell SpawnManager to start spawning
-            SpawnManager spawner = FindObjectOfType<SpawnManager>();
-            if (spawner != null)
-            {
-                spawner.StartWave(currentWave, enemiesRemainingInWave);
-            }
-        }
-
-        /// <summary>Called when an enemy is destroyed during a wave.</summary>
-        public void OnEnemyKilled()
-        {
-            totalEnemiesKilledInWave++;
-            enemiesRemainingInWave--;
-
-            if (enemiesRemainingInWave <= 0)
-            {
-                OnWaveComplete?.Invoke();
-                // Start next wave after cooldown
-                StartCoroutine(WaveCooldownRoutine());
-            }
-        }
-
-        private System.Collections.IEnumerator WaveCooldownRoutine()
-        {
-            yield return new WaitForSeconds(waveCooldown);
-
-            if (currentState == GameState.Playing)
-            {
-                StartNextWave();
-            }
-        }
-
-        // ========== UTILITY ==========
-
-        /// <summary>Get total enemies for a given wave number.</summary>
-        public int GetTotalEnemiesForWave(int wave)
-        {
-            return enemiesPerWaveBase + (wave - 1) * enemiesPerWaveIncrement;
-        }
-
-        private void Update()
-        {
-            // Pause toggle with Escape key
-            if (Input.GetKeyDown(KeyCode.Escape))
-            {
-                if (currentState == GameState.Playing || currentState == GameState.Paused)
-                {
-                    TogglePause();
-                }
-            }
-        }
-
-        private void OnDestroy()
-        {
-            if (Instance == this)
-                Instance = null;
+            GameObject[] objs = GameObject.FindGameObjectsWithTag(tag);
+            foreach (var o in objs) Destroy(o);
         }
     }
 }
