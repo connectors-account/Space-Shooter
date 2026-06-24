@@ -1,86 +1,82 @@
 using UnityEngine;
 
-namespace SpaceShooter.Environment
+namespace SpaceShooter
 {
     /// <summary>
-    /// Simple parallax scrolling background with two layers.
-    /// Each layer scrolls at a different speed creating depth illusion.
-    /// Tiles vertically for seamless infinite scrolling.
+    /// Vertically scrolling parallax background. Supports multiple layers, each
+    /// scrolling at its own speed to create a depth effect. Each layer needs two
+    /// stacked copies of the sprite so it can loop seamlessly.
     /// </summary>
     public class ParallaxBackground : MonoBehaviour
     {
-        [Header("Layer 1 - Far Background (slower)")]
-        [SerializeField] private SpriteRenderer layer1Renderer;
-        [SerializeField] private float layer1Speed = 0.5f;
+        [System.Serializable]
+        public class ParallaxLayer
+        {
+            public Transform layerRoot;     // parent containing two stacked tiles
+            public float scrollSpeed = 1f;
+            [HideInInspector] public float tileHeight;
+            [HideInInspector] public Transform tileA;
+            [HideInInspector] public Transform tileB;
+        }
 
-        [Header("Layer 2 - Near Background (faster)")]
-        [SerializeField] private SpriteRenderer layer2Renderer;
-        [SerializeField] private float layer2Speed = 1.5f;
-
-        [Header("Scroll Settings")]
-        [SerializeField] private float tileHeight = 20f;  // Height of one background tile
-
-        // Internal tracking for each layer
-        private Transform layer1A, layer1B;
-        private Transform layer2A, layer2B;
+        [SerializeField] private ParallaxLayer[] layers;
 
         private void Start()
         {
-            // Create duplicate sprites for seamless tiling
-            SetupLayer(layer1Renderer, out layer1A, out layer1B, "Layer1");
-            SetupLayer(layer2Renderer, out layer2A, out layer2B, "Layer2");
+            foreach (var layer in layers)
+            {
+                InitLayer(layer);
+            }
         }
 
-        /// <summary>
-        /// Creates two copies of a background sprite stacked vertically.
-        /// </summary>
-        private void SetupLayer(SpriteRenderer sourceRenderer, out Transform tileA, out Transform tileB, string name)
+        private void InitLayer(ParallaxLayer layer)
         {
-            tileA = null;
-            tileB = null;
+            if (layer.layerRoot == null || layer.layerRoot.childCount < 2) return;
 
-            if (sourceRenderer == null) return;
+            layer.tileA = layer.layerRoot.GetChild(0);
+            layer.tileB = layer.layerRoot.GetChild(1);
 
-            // Use the source as tileA
-            tileA = sourceRenderer.transform;
+            SpriteRenderer sr = layer.tileA.GetComponent<SpriteRenderer>();
+            if (sr != null)
+            {
+                layer.tileHeight = sr.bounds.size.y;
+            }
 
-            // Create a duplicate for tileB (positioned above tileA)
-            GameObject duplicate = Instantiate(sourceRenderer.gameObject, transform);
-            duplicate.name = name + "_TileB";
-            tileB = duplicate.transform;
-            tileB.position = tileA.position + Vector3.up * tileHeight;
+            // Position tile B directly above tile A.
+            layer.tileB.position = layer.tileA.position + Vector3.up * layer.tileHeight;
         }
 
         private void Update()
         {
-            // Scroll each layer
-            ScrollLayer(layer1A, layer1B, layer1Speed);
-            ScrollLayer(layer2A, layer2B, layer2Speed);
+            foreach (var layer in layers)
+            {
+                ScrollLayer(layer);
+            }
         }
 
-        /// <summary>
-        /// Scrolls two tiles downward and wraps them for infinite scrolling.
-        /// </summary>
-        private void ScrollLayer(Transform tileA, Transform tileB, float speed)
+        private void ScrollLayer(ParallaxLayer layer)
         {
-            if (tileA == null || tileB == null) return;
+            if (layer.tileA == null || layer.tileB == null) return;
 
-            // Move both tiles downward
-            float offset = speed * Time.deltaTime;
-            tileA.position += Vector3.down * offset;
-            tileB.position += Vector3.down * offset;
+            Vector3 delta = Vector3.down * layer.scrollSpeed * Time.deltaTime;
+            layer.tileA.position += delta;
+            layer.tileB.position += delta;
 
-            // Wrap tiles when they go below the screen
-            float resetThreshold = -tileHeight;
+            RecycleTile(layer, layer.tileA);
+            RecycleTile(layer, layer.tileB);
+        }
 
-            if (tileA.position.y <= resetThreshold)
+        private void RecycleTile(ParallaxLayer layer, Transform tile)
+        {
+            // When a tile fully scrolls below the camera, move it back up above
+            // the other tile to create an infinite loop.
+            if (Camera.main == null) return;
+
+            float camBottom = Camera.main.ViewportToWorldPoint(Vector3.zero).y;
+            if (tile.position.y + layer.tileHeight * 0.5f < camBottom)
             {
-                tileA.position = tileB.position + Vector3.up * tileHeight;
-            }
-
-            if (tileB.position.y <= resetThreshold)
-            {
-                tileB.position = tileA.position + Vector3.up * tileHeight;
+                Transform other = tile == layer.tileA ? layer.tileB : layer.tileA;
+                tile.position = new Vector3(tile.position.x, other.position.y + layer.tileHeight, tile.position.z);
             }
         }
     }

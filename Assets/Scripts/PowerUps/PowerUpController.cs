@@ -1,87 +1,83 @@
 using UnityEngine;
 
-namespace SpaceShooter.PowerUps
+namespace SpaceShooter
 {
+    public enum PowerUpType
+    {
+        Health,
+        WeaponUpgrade,
+        Shield
+    }
+
     /// <summary>
-    /// Power-up types: HealthPack, RapidFire, Shield.
-    /// Drifts downward and applies effect on player contact.
+    /// A floating power-up pickup. Drifts down the screen and applies its
+    /// effect to the player on contact.
     /// </summary>
+    [RequireComponent(typeof(Collider2D))]
     public class PowerUpController : MonoBehaviour
     {
-        public enum PowerUpType
-        {
-            HealthPack,
-            RapidFire,
-            Shield
-        }
+        [Header("Power-up")]
+        [SerializeField] private PowerUpType type = PowerUpType.Health;
+        [SerializeField] private float fallSpeed = 2f;
 
-        [Header("Power-Up Settings")]
-        [SerializeField] private PowerUpType powerUpType = PowerUpType.HealthPack;
-        [SerializeField] private float driftSpeed = 2f;
-        [SerializeField] private float lifetime = 10f;
-        [SerializeField] private int healAmount = 30;
+        [Header("Effect Amounts")]
+        [SerializeField] private float healthAmount = 35f;
+        [SerializeField] private float shieldDuration = 5f;
 
-        [Header("Visual")]
-        [SerializeField] private float bobAmplitude = 0.3f;
-        [SerializeField] private float bobFrequency = 2f;
-
-        private float spawnTime;
-        private float startY;
+        private float despawnY;
 
         private void Start()
         {
-            spawnTime = Time.time;
-            startY = transform.position.y;
-            tag = "PowerUp";
-
-            // Auto-destroy after lifetime
-            Destroy(gameObject, lifetime);
+            if (Camera.main != null)
+            {
+                despawnY = Camera.main.ViewportToWorldPoint(Vector3.zero).y - 2f;
+            }
+            else
+            {
+                despawnY = -12f;
+            }
         }
 
         private void Update()
         {
-            // Drift downward with a gentle bobbing motion
-            float elapsed = Time.time - spawnTime;
-            float bobOffset = Mathf.Sin(elapsed * bobFrequency) * bobAmplitude;
+            transform.Translate(Vector2.down * fallSpeed * Time.deltaTime, Space.World);
+            // Gentle spin for visual appeal.
+            transform.Rotate(0f, 0f, 45f * Time.deltaTime);
 
-            transform.position += Vector3.down * driftSpeed * Time.deltaTime;
-
-            // Apply bob on local scale (visual wobble)
-            float scale = 1f + Mathf.Sin(elapsed * bobFrequency * 2f) * 0.05f;
-            transform.localScale = new Vector3(scale, scale, 1f);
-
-            // Destroy if out of bounds
-            if (transform.position.y < -7f)
+            if (transform.position.y < despawnY)
             {
                 Destroy(gameObject);
             }
         }
 
-        /// <summary>
-        /// Applies this power-up's effect to the player.
-        /// Called by PlayerController on trigger collision.
-        /// </summary>
-        public void ApplyEffect(Player.PlayerController player)
+        private void OnTriggerEnter2D(Collider2D other)
         {
-            if (player == null) return;
+            if (!other.CompareTag("Player")) return;
 
-            switch (powerUpType)
+            PlayerController player = other.GetComponent<PlayerController>();
+            if (player != null)
             {
-                case PowerUpType.HealthPack:
-                    player.Heal(healAmount);
-                    break;
+                ApplyEffect(player);
+                Destroy(gameObject);
+            }
+        }
 
-                case PowerUpType.RapidFire:
-                    player.ActivateRapidFire();
+        private void ApplyEffect(PlayerController player)
+        {
+            switch (type)
+            {
+                case PowerUpType.Health:
+                    player.AddHealth(healthAmount);
                     break;
-
+                case PowerUpType.WeaponUpgrade:
+                    player.UpgradeWeapon();
+                    break;
                 case PowerUpType.Shield:
-                    player.ActivateShield();
+                    player.ActivateShield(shieldDuration);
                     break;
             }
 
-            // Play power-up sound
-            Managers.AudioManager.Instance?.PlayPowerUpSound();
+            UIManager.Instance?.ShowPowerUpText(type.ToString());
         }
     }
 }
