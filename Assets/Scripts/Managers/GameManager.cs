@@ -1,214 +1,261 @@
+using System;
+using System.Collections;
+using SpaceShooter.Core;
+using SpaceShooter.Player;
+using SpaceShooter.Weapons;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
 namespace SpaceShooter.Managers
 {
     /// <summary>
-    /// Central game state manager. Handles score, wave progression, game states.
-    /// Singleton pattern — persists across scenes.
+    /// The central game-flow controller. Owns the <see cref="GameState"/>, the score, wave
+    /// progression and the win/lose conditions, and coordinates the other managers and the player.
     /// </summary>
     public class GameManager : MonoBehaviour
     {
-        // ---- Singleton ----
+        /// <summary>Global access point.</summary>
         public static GameManager Instance { get; private set; }
 
-        // ---- Game States ----
-        public enum GameState
+        private GameConfig _config;
+        private PlayerController _player;
+        private SpawnManager _spawnManager;
+
+        private GameState _state = GameState.MainMenu;
+        private int _score;
+        private int _currentWave;
+        private Coroutine _nextWaveRoutine;
+
+        /// <summary>Name of the gameplay scene (must be in Build Settings).</summary>
+        public const string GamePlaySceneName = "GamePlay";
+
+        /// <summary>Name of the main menu scene (must be in Build Settings).</summary>
+        public const string MainMenuSceneName = "MainMenu";
+
+        /// <summary>Raised when the score changes.</summary>
+        public event Action<int> ScoreChanged;
+
+        /// <summary>Raised when the wave changes. Args: (waveNumber, isBossWave).</summary>
+        public event Action<int, bool> WaveChanged;
+
+        /// <summary>Raised when the overall game state changes.</summary>
+        public event Action<GameState> StateChanged;
+
+        /// <summary>The current game state.</summary>
+        public GameState State => _state;
+
+        /// <summary>Current score.</summary>
+        public int Score => _score;
+
+        /// <summary>Current wave number (1-based).</summary>
+        public int CurrentWave => _currentWave;
+
+        /// <summary>Shared configuration.</summary>
+        public GameConfig Config => _config;
+
+        /// <summary>
+        /// Wires the game manager to the scene's player and spawn manager. Called by the bootstrap.
+        /// </summary>
+        public void Initialize(GameConfig config, PlayerController player, SpawnManager spawnManager)
         {
-            MainMenu,
-            Playing,
-            Paused,
-            GameOver
-        }
-
-        [Header("Game Settings")]
-        [SerializeField] private int startingWave = 1;
-        [SerializeField] private int enemiesPerWaveBase = 5;
-        [SerializeField] private int enemiesPerWaveIncrement = 3;
-        [SerializeField] private float waveCooldown = 3f;
-
-        // ---- Runtime State ----
-        private GameState currentState = GameState.MainMenu;
-        private int score;
-        private int currentWave;
-        private int enemiesRemainingInWave;
-        private int totalEnemiesKilledInWave;
-        private int highScore;
-
-        // ---- Public Properties ----
-        public GameState CurrentState => currentState;
-        public int Score => score;
-        public int CurrentWave => currentWave;
-        public int HighScore => highScore;
-        public int EnemiesRemainingInWave => enemiesRemainingInWave;
-
-        // ---- Events ----
-        public event System.Action<int> OnScoreChanged;
-        public event System.Action<int> OnWaveChanged;
-        public event System.Action<GameState> OnGameStateChanged;
-        public event System.Action OnWaveComplete;
-
-        private void Awake()
-        {
-            // Singleton setup
-            if (Instance != null && Instance != this)
-            {
-                Destroy(gameObject);
-                return;
-            }
             Instance = this;
-            DontDestroyOnLoad(gameObject);
+            _config = config;
+            _player = player;
+            _spawnManager = spawnManager;
 
-            // Load high score from PlayerPrefs
-            highScore = PlayerPrefs.GetInt("HighScore", 0);
+            _player.PlayerDied += OnPlayerDied;
+            _spawnManager.WaveCleared += OnWaveCleared;
         }
 
-        // ========== STATE MANAGEMENT ==========
-
-        /// <summary>Starts a new game from wave 1.</summary>
+        /// <summary>
+        /// Starts a brand-new game session from wave one.
+        /// </summary>
         public void StartGame()
         {
-            score = 0;
-            currentWave = 0;
-            totalEnemiesKilledInWave = 0;
+            _score = 0;
+            _currentWave = 0;
+            ScoreChanged?.Invoke(_score);
+            Time.timeScale = 1f;
 
             SetState(GameState.Playing);
-            OnScoreChanged?.Invoke(score);
-
-            // Start first wave
-            StartNextWave();
+            _player.SetControllable(true);
+            AudioManager.Instance?.StartMusic();
+            AdvanceToNextWave();
         }
 
-        /// <summary>Pauses or unpauses the game.</summary>
+        private void AdvanceToNextWave()
+        {
+            _currentWave++;
+            if (_currentWave > _config.TotalWaves)
+            {
+                TriggerVictory();
+                return;
+            }
+
+            bool isBoss = _currentWave % _config.BossEveryNWaves == 0;
+            WaveChanged?.Invoke(_currentWave, isBoss);
+            AudioManager.Instance?.PlayWaveStart();
+            _spawnManager.BeginWave(_currentWave);
+        }
+
+        private void OnWaveCleared()
+        {
+            if (_state != GameState.Playing)
+            {
+                return;
+            }
+
+            if (_currentWave >= _config.TotalWaves)
+            {
+                TriggerVictory();
+                return;
+            }
+
+            if (_nextWaveRoutine != null)
+            {
+                StopCoroutine(_nextWaveRoutine);
+            }
+            _nextWaveRoutine = StartCoroutine(NextWaveAfterDelay());
+        }
+
+        private IEnumerator NextWaveAfterDelay()
+        {
+            yield return new WaitForSeconds(_config.TimeBetweenWaves);
+            if (_state == GameState.Playing)
+            {
+                AdvanceToNextWave();
+            }
+            _nextWaveRoutine = null;
+        }
+
+        /// <summary>
+        /// Adds score, applying the player's current score multiplier.
+        /// </summary>
+        /// <param name="basePoints">Base points before any multiplier.</param>
+        public void AddScore(int basePoints)
+        {
+            int multiplier = _player != null ? _player.ScoreMultiplier : 1;
+            _score += basePoints * multiplier;
+            ScoreChanged?.Invoke(_score);
+        }
+
+        private void OnPlayerDied()
+        {
+            TriggerGameOver();
+        }
+
+        private void TriggerGameOver()
+        {
+            if (_state == GameState.GameOver)
+            {
+                return;
+            }
+            SetState(GameState.GameOver);
+            _player.SetControllable(false);
+            AudioManager.Instance?.StopMusic();
+        }
+
+        private void TriggerVictory()
+        {
+            if (_state == GameState.Victory)
+            {
+                return;
+            }
+            SetState(GameState.Victory);
+            _player.SetControllable(false);
+            AudioManager.Instance?.StopMusic();
+            ClearField();
+        }
+
+        /// <summary>
+        /// Toggles between playing and paused.
+        /// </summary>
         public void TogglePause()
         {
-            if (currentState == GameState.Playing)
+            if (_state == GameState.Playing)
             {
-                SetState(GameState.Paused);
-                Time.timeScale = 0f;
+                PauseGame();
             }
-            else if (currentState == GameState.Paused)
+            else if (_state == GameState.Paused)
             {
-                SetState(GameState.Playing);
-                Time.timeScale = 1f;
+                ResumeGame();
             }
         }
 
-        /// <summary>Triggers game over state.</summary>
-        public void GameOver()
+        /// <summary>Pauses gameplay (sets time scale to zero).</summary>
+        public void PauseGame()
         {
-            SetState(GameState.GameOver);
-            Time.timeScale = 1f;
-
-            // Save high score
-            if (score > highScore)
+            if (_state != GameState.Playing)
             {
-                highScore = score;
-                PlayerPrefs.SetInt("HighScore", highScore);
-                PlayerPrefs.Save();
+                return;
             }
+            SetState(GameState.Paused);
+            Time.timeScale = 0f;
+            _player.SetControllable(false);
         }
 
-        /// <summary>Returns to main menu.</summary>
-        public void ReturnToMenu()
+        /// <summary>Resumes gameplay from a paused state.</summary>
+        public void ResumeGame()
         {
-            SetState(GameState.MainMenu);
+            if (_state != GameState.Paused)
+            {
+                return;
+            }
+            SetState(GameState.Playing);
             Time.timeScale = 1f;
-            score = 0;
-            currentWave = 0;
+            _player.SetControllable(true);
         }
 
-        /// <summary>Restarts the game.</summary>
+        /// <summary>Restarts the gameplay scene from scratch.</summary>
         public void RestartGame()
         {
             Time.timeScale = 1f;
-            StartGame();
+            SceneManager.LoadScene(GamePlaySceneName);
+        }
+
+        /// <summary>Returns to the main menu scene.</summary>
+        public void GoToMainMenu()
+        {
+            Time.timeScale = 1f;
+            SceneManager.LoadScene(MainMenuSceneName);
+        }
+
+        /// <summary>Quits the application (or stops play mode in the editor).</summary>
+        public void QuitGame()
+        {
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPlaying = false;
+#else
+            Application.Quit();
+#endif
+        }
+
+        private void ClearField()
+        {
+            BulletManager.Instance?.ReleaseAll();
+            _spawnManager?.ReleaseAll();
         }
 
         private void SetState(GameState newState)
         {
-            currentState = newState;
-            OnGameStateChanged?.Invoke(currentState);
-        }
-
-        // ========== SCORE ==========
-
-        /// <summary>Add to the player's score.</summary>
-        public void AddScore(int points)
-        {
-            if (currentState != GameState.Playing) return;
-
-            score += points;
-            OnScoreChanged?.Invoke(score);
-        }
-
-        // ========== WAVE MANAGEMENT ==========
-
-        /// <summary>Starts the next wave.</summary>
-        public void StartNextWave()
-        {
-            currentWave++;
-            totalEnemiesKilledInWave = 0;
-            enemiesRemainingInWave = enemiesPerWaveBase + (currentWave - 1) * enemiesPerWaveIncrement;
-
-            OnWaveChanged?.Invoke(currentWave);
-
-            // Tell SpawnManager to start spawning
-            SpawnManager spawner = FindObjectOfType<SpawnManager>();
-            if (spawner != null)
-            {
-                spawner.StartWave(currentWave, enemiesRemainingInWave);
-            }
-        }
-
-        /// <summary>Called when an enemy is destroyed during a wave.</summary>
-        public void OnEnemyKilled()
-        {
-            totalEnemiesKilledInWave++;
-            enemiesRemainingInWave--;
-
-            if (enemiesRemainingInWave <= 0)
-            {
-                OnWaveComplete?.Invoke();
-                // Start next wave after cooldown
-                StartCoroutine(WaveCooldownRoutine());
-            }
-        }
-
-        private System.Collections.IEnumerator WaveCooldownRoutine()
-        {
-            yield return new WaitForSeconds(waveCooldown);
-
-            if (currentState == GameState.Playing)
-            {
-                StartNextWave();
-            }
-        }
-
-        // ========== UTILITY ==========
-
-        /// <summary>Get total enemies for a given wave number.</summary>
-        public int GetTotalEnemiesForWave(int wave)
-        {
-            return enemiesPerWaveBase + (wave - 1) * enemiesPerWaveIncrement;
-        }
-
-        private void Update()
-        {
-            // Pause toggle with Escape key
-            if (Input.GetKeyDown(KeyCode.Escape))
-            {
-                if (currentState == GameState.Playing || currentState == GameState.Paused)
-                {
-                    TogglePause();
-                }
-            }
+            _state = newState;
+            StateChanged?.Invoke(_state);
         }
 
         private void OnDestroy()
         {
+            if (_player != null)
+            {
+                _player.PlayerDied -= OnPlayerDied;
+            }
+            if (_spawnManager != null)
+            {
+                _spawnManager.WaveCleared -= OnWaveCleared;
+            }
             if (Instance == this)
+            {
                 Instance = null;
+            }
         }
     }
 }
