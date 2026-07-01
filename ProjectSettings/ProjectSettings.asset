@@ -1,0 +1,30 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!129 &1
+PlayerSettings:
+  m_ObjectHideFlags: 0
+  serializedVersion: 26
+  productGUID: 0123456789abcdef0123456789abcdef
+  AndroidProfiler: 0
+  defaultScreenWidth: 1280
+  defaultScreenHeight: 720
+  defaultScreenOrientation: 4
+  companyName: IndieDev
+  productName: SpaceShooter
+  defaultCursor: {fileID: 0}
+  cursorHotspot: {x: 0, y: 0}
+  m_ShowUnitySplashScreen: 1
+  m_ShowUnitySplashLogo: 1
+  fullscreenMode: 3
+  runInBackground: 1
+  resizableWindow: 1
+  bundleVersion: 1.0.0
+  preloadedAssets: []
+  metroInputSource: 0
+  m_HolographicPauseOnTrackingLoss: 1
+  xboxOneMonoLoggingLevel: 0
+  xboxOneLoggingLevel: 1
+  applicationIdentifier:
+    Standalone: com.indiedev.spaceshooter
+  buildNumber:
+    Standalone: 0
