@@ -1,41 +1,57 @@
 using UnityEngine;
 
 /// <summary>
-/// Controls the player ship movement, shooting, and health management.
+/// Handles player ship: keyboard movement, shooting, health and collisions.
+/// Requires a Rigidbody2D (set to Kinematic) and a Collider2D on the same object.
+/// If no bullet prefab is assigned, a simple one is generated at runtime.
 /// </summary>
+[RequireComponent(typeof(Rigidbody2D))]
 public class PlayerController : MonoBehaviour
 {
-    [Header("Movement Settings")]
-    [SerializeField] private float moveSpeed = 8f;
-    [SerializeField] private float horizontalBoundary = 8f;
-    [SerializeField] private float verticalBoundaryTop = 4f;
-    [SerializeField] private float verticalBoundaryBottom = -4f;
+    [Header("Movement")]
+    [Tooltip("Movement speed in world units per second.")]
+    public float moveSpeed = 8f;
+    [Tooltip("Horizontal clamp (half screen width in world units).")]
+    public float horizontalLimit = 8.5f;
+    [Tooltip("Vertical clamp (half screen height in world units).")]
+    public float verticalLimit = 4.5f;
 
-    [Header("Shooting Settings")]
-    [SerializeField] private GameObject bulletPrefab;
-    [SerializeField] private Transform firePoint;
-    [SerializeField] private float fireRate = 0.25f;
+    [Header("Shooting")]
+    [Tooltip("Bullet prefab. If null, one is created programmatically.")]
+    public GameObject bulletPrefab;
+    [Tooltip("Seconds between shots.")]
+    public float fireRate = 0.25f;
+    [Tooltip("Speed of fired bullets.")]
+    public float bulletSpeed = 12f;
+    [Tooltip("Local offset from ship where bullets spawn.")]
+    public Vector2 muzzleOffset = new Vector2(0f, 0.6f);
 
-    [Header("Health Settings")]
-    [SerializeField] private int maxHealth = 3;
+    [Header("Health")]
+    public int maxHealth = 100;
+    [Tooltip("Damage taken when hit by an enemy bullet.")]
+    public int bulletDamage = 20;
+    [Tooltip("Damage taken when colliding with an enemy ship.")]
+    public int collisionDamage = 40;
 
     private int currentHealth;
-    private float nextFireTime = 0f;
-    private bool canControl = true;
-
-    public int CurrentHealth => currentHealth;
-    public int MaxHealth => maxHealth;
+    private float nextFireTime;
 
     private void Start()
     {
         currentHealth = maxHealth;
-        UpdateHealthUI();
+        if (UIManager.Instance != null)
+        {
+            UIManager.Instance.UpdateHealth(currentHealth, maxHealth);
+        }
     }
 
     private void Update()
     {
-        if (!canControl || GameManager.Instance == null || GameManager.Instance.IsGameOver)
+        // Only respond while the game is actively being played.
+        if (GameManager.Instance != null && GameManager.Instance.State != GameManager.GameState.Playing)
+        {
             return;
+        }
 
         HandleMovement();
         HandleShooting();
@@ -43,22 +59,23 @@ public class PlayerController : MonoBehaviour
 
     private void HandleMovement()
     {
-        float horizontalInput = Input.GetAxis("Horizontal");
-        float verticalInput = Input.GetAxis("Vertical");
+        // Uses the classic Input axes (Horizontal/Vertical) mapped to WASD + arrows.
+        float h = Input.GetAxisRaw("Horizontal");
+        float v = Input.GetAxisRaw("Vertical");
 
-        // WASD and Arrow keys are both mapped to Horizontal/Vertical by default in Unity
-        Vector3 movement = new Vector3(horizontalInput, verticalInput, 0f) * moveSpeed * Time.deltaTime;
-        transform.Translate(movement, Space.World);
+        Vector3 dir = new Vector3(h, v, 0f).normalized;
+        Vector3 pos = transform.position + dir * moveSpeed * Time.deltaTime;
 
-        // Clamp position to screen boundaries
-        float clampedX = Mathf.Clamp(transform.position.x, -horizontalBoundary, horizontalBoundary);
-        float clampedY = Mathf.Clamp(transform.position.y, verticalBoundaryBottom, verticalBoundaryTop);
-        transform.position = new Vector3(clampedX, clampedY, transform.position.z);
+        pos.x = Mathf.Clamp(pos.x, -horizontalLimit, horizontalLimit);
+        pos.y = Mathf.Clamp(pos.y, -verticalLimit, verticalLimit);
+        transform.position = pos;
     }
 
     private void HandleShooting()
     {
-        if (Input.GetKey(KeyCode.Space) && Time.time >= nextFireTime)
+        // Fire on Space or left mouse button, respecting the fire rate.
+        bool firePressed = Input.GetKey(KeyCode.Space) || Input.GetButton("Fire1");
+        if (firePressed && Time.time >= nextFireTime)
         {
             Shoot();
             nextFireTime = Time.time + fireRate;
@@ -67,28 +84,33 @@ public class PlayerController : MonoBehaviour
 
     private void Shoot()
     {
-        if (bulletPrefab == null)
+        Vector3 spawnPos = transform.position + (Vector3)muzzleOffset;
+
+        GameObject bullet;
+        if (bulletPrefab != null)
         {
-            Debug.LogWarning("Bullet prefab not assigned to PlayerController!");
-            return;
+            bullet = Instantiate(bulletPrefab, spawnPos, Quaternion.identity);
+        }
+        else
+        {
+            bullet = BulletFactory.CreateBullet(spawnPos, new Color(0.3f, 0.9f, 1f));
         }
 
-        Vector3 spawnPosition = firePoint != null ? firePoint.position : transform.position + Vector3.up * 0.5f;
-        GameObject bullet = Instantiate(bulletPrefab, spawnPosition, Quaternion.identity);
-        
-        BulletController bulletController = bullet.GetComponent<BulletController>();
-        if (bulletController != null)
-        {
-            bulletController.Initialize(true, Vector3.up);
-        }
+        BulletController bc = bullet.GetComponent<BulletController>();
+        if (bc == null) bc = bullet.AddComponent<BulletController>();
+        bc.Initialize(Vector2.up, bulletSpeed, true, bulletDamage);
     }
 
-    public void TakeDamage(int damage)
+    /// <summary>Apply damage to the player and update the HUD.</summary>
+    public void TakeDamage(int amount)
     {
-        currentHealth -= damage;
-        currentHealth = Mathf.Max(currentHealth, 0);
-        
-        UpdateHealthUI();
+        currentHealth -= amount;
+        if (currentHealth < 0) currentHealth = 0;
+
+        if (UIManager.Instance != null)
+        {
+            UIManager.Instance.UpdateHealth(currentHealth, maxHealth);
+        }
 
         if (currentHealth <= 0)
         {
@@ -96,77 +118,31 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    private void UpdateHealthUI()
-    {
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.UpdateHealth(currentHealth, maxHealth);
-        }
-    }
-
     private void Die()
     {
-        canControl = false;
-        
         if (GameManager.Instance != null)
         {
-            GameManager.Instance.GameOver();
+            GameManager.Instance.OnPlayerDied();
         }
-
-        // Visual feedback - disable renderer instead of destroying
-        SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null)
-        {
-            spriteRenderer.enabled = false;
-        }
-
-        // Disable collider
-        Collider2D col = GetComponent<Collider2D>();
-        if (col != null)
-        {
-            col.enabled = false;
-        }
+        Destroy(gameObject);
     }
 
     private void OnTriggerEnter2D(Collider2D other)
     {
-        // Handle collision with enemy
-        if (other.CompareTag("Enemy"))
+        if (other.CompareTag("EnemyBullet"))
         {
-            TakeDamage(1);
-            
+            TakeDamage(bulletDamage);
+            Destroy(other.gameObject);
+        }
+        else if (other.CompareTag("Enemy"))
+        {
+            TakeDamage(collisionDamage);
+            // Destroy the enemy that rammed us.
             EnemyController enemy = other.GetComponent<EnemyController>();
             if (enemy != null)
             {
-                enemy.TakeDamage(enemy.MaxHealth); // Destroy enemy on collision
+                enemy.DestroyEnemy(false);
             }
         }
-        // Handle collision with enemy bullet
-        else if (other.CompareTag("EnemyBullet"))
-        {
-            TakeDamage(1);
-            Destroy(other.gameObject);
-        }
-    }
-
-    public void ResetPlayer()
-    {
-        currentHealth = maxHealth;
-        canControl = true;
-        transform.position = new Vector3(0f, -3f, 0f);
-        
-        SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null)
-        {
-            spriteRenderer.enabled = true;
-        }
-
-        Collider2D col = GetComponent<Collider2D>();
-        if (col != null)
-        {
-            col.enabled = true;
-        }
-
-        UpdateHealthUI();
     }
 }
