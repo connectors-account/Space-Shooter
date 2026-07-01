@@ -1,129 +1,170 @@
 using UnityEngine;
 
 /// <summary>
-/// Controls enemy ship behavior including movement, shooting, and health.
+/// Controls an enemy ship. Supports multiple movement patterns, periodic
+/// shooting toward the player, health, and score rewards. Falls back to a
+/// programmatic bullet if no prefab is assigned.
 /// </summary>
+[RequireComponent(typeof(Rigidbody2D))]
 public class EnemyController : MonoBehaviour
 {
-    [Header("Movement Settings")]
-    [SerializeField] private float moveSpeed = 3f;
-    [SerializeField] private float horizontalMovement = 0f;
+    public enum MovePattern { Straight, Sine, Diagonal }
 
-    [Header("Shooting Settings")]
-    [SerializeField] private GameObject bulletPrefab;
-    [SerializeField] private float fireRate = 2f;
-    [SerializeField] private bool canShoot = true;
+    [Header("Movement")]
+    [Tooltip("Downward speed in world units per second.")]
+    public float moveSpeed = 2.5f;
+    [Tooltip("Horizontal amplitude for the Sine pattern.")]
+    public float sineAmplitude = 2f;
+    [Tooltip("Horizontal frequency for the Sine pattern.")]
+    public float sineFrequency = 2f;
+    [Tooltip("Y position below which the enemy despawns.")]
+    public float despawnY = -6f;
 
-    [Header("Health & Score")]
-    [SerializeField] private int maxHealth = 1;
-    [SerializeField] private int scoreValue = 100;
+    [Header("Shooting")]
+    [Tooltip("Enemy bullet prefab. If null, one is created programmatically.")]
+    public GameObject bulletPrefab;
+    [Tooltip("Chance (0-1) per shooting window that the enemy fires.")]
+    [Range(0f, 1f)] public float shootChance = 0.7f;
+    [Tooltip("Minimum seconds between shots.")]
+    public float minShootInterval = 1.2f;
+    [Tooltip("Maximum seconds between shots.")]
+    public float maxShootInterval = 3f;
+    public float bulletSpeed = 6f;
+    public int bulletDamage = 20;
 
-    [Header("Boundaries")]
-    [SerializeField] private float destroyY = -6f;
+    [Header("Stats")]
+    public int maxHealth = 30;
+    [Tooltip("Score awarded to the player when destroyed.")]
+    public int scoreValue = 100;
 
+    private MovePattern pattern;
     private int currentHealth;
-    private float nextFireTime;
-
-    public int MaxHealth => maxHealth;
-    public int ScoreValue => scoreValue;
+    private float startX;
+    private float spawnTime;
+    private float nextShootTime;
+    private float diagonalDir = 1f;
+    private bool counted = true; // whether GameManager is tracking this enemy
 
     private void Start()
     {
         currentHealth = maxHealth;
-        nextFireTime = Time.time + Random.Range(0.5f, fireRate);
-        
-        // Add slight random horizontal movement variation
-        horizontalMovement = Random.Range(-0.5f, 0.5f);
+        startX = transform.position.x;
+        spawnTime = Time.time;
+
+        // Pick a random movement pattern for variety.
+        pattern = (MovePattern)Random.Range(0, System.Enum.GetValues(typeof(MovePattern)).Length);
+        diagonalDir = Random.value < 0.5f ? -1f : 1f;
+
+        ScheduleNextShot();
     }
 
     private void Update()
     {
-        if (GameManager.Instance != null && GameManager.Instance.IsGameOver)
-            return;
-
         Move();
-        HandleShooting();
-        CheckBounds();
+        TryShoot();
+
+        if (transform.position.y < despawnY)
+        {
+            DestroyEnemy(false, despawned: true);
+        }
     }
 
     private void Move()
     {
-        Vector3 movement = new Vector3(horizontalMovement, -1f, 0f).normalized * moveSpeed * Time.deltaTime;
-        transform.Translate(movement, Space.World);
+        Vector3 pos = transform.position;
+        float t = Time.time - spawnTime;
+
+        switch (pattern)
+        {
+            case MovePattern.Straight:
+                pos.y -= moveSpeed * Time.deltaTime;
+                break;
+
+            case MovePattern.Sine:
+                pos.y -= moveSpeed * Time.deltaTime;
+                pos.x = startX + Mathf.Sin(t * sineFrequency) * sineAmplitude;
+                break;
+
+            case MovePattern.Diagonal:
+                pos.y -= moveSpeed * Time.deltaTime;
+                pos.x += diagonalDir * moveSpeed * 0.5f * Time.deltaTime;
+                // Bounce off horizontal edges.
+                if (Mathf.Abs(pos.x) > 8.5f) diagonalDir *= -1f;
+                break;
+        }
+
+        transform.position = pos;
     }
 
-    private void HandleShooting()
+    private void TryShoot()
     {
-        if (!canShoot || bulletPrefab == null)
-            return;
-
-        if (Time.time >= nextFireTime)
+        if (GameManager.Instance != null && GameManager.Instance.State != GameManager.GameState.Playing)
         {
-            Shoot();
-            nextFireTime = Time.time + fireRate + Random.Range(-0.5f, 0.5f);
+            return;
         }
+
+        if (Time.time >= nextShootTime)
+        {
+            if (Random.value <= shootChance)
+            {
+                Shoot();
+            }
+            ScheduleNextShot();
+        }
+    }
+
+    private void ScheduleNextShot()
+    {
+        nextShootTime = Time.time + Random.Range(minShootInterval, maxShootInterval);
     }
 
     private void Shoot()
     {
-        Vector3 spawnPosition = transform.position + Vector3.down * 0.5f;
-        GameObject bullet = Instantiate(bulletPrefab, spawnPosition, Quaternion.identity);
-        
-        BulletController bulletController = bullet.GetComponent<BulletController>();
-        if (bulletController != null)
+        Vector3 spawnPos = transform.position + Vector3.down * 0.6f;
+
+        GameObject bullet;
+        if (bulletPrefab != null)
         {
-            bulletController.Initialize(false, Vector3.down);
+            bullet = Instantiate(bulletPrefab, spawnPos, Quaternion.identity);
         }
+        else
+        {
+            bullet = BulletFactory.CreateBullet(spawnPos, new Color(1f, 0.4f, 0.3f));
+        }
+
+        BulletController bc = bullet.GetComponent<BulletController>();
+        if (bc == null) bc = bullet.AddComponent<BulletController>();
+        bc.Initialize(Vector2.down, bulletSpeed, false, bulletDamage);
     }
 
-    private void CheckBounds()
+    /// <summary>Apply damage; destroy and award score if health depletes.</summary>
+    public void TakeDamage(int amount)
     {
-        if (transform.position.y < destroyY)
-        {
-            Destroy(gameObject);
-        }
-    }
-
-    public void TakeDamage(int damage)
-    {
-        currentHealth -= damage;
-        
+        currentHealth -= amount;
         if (currentHealth <= 0)
         {
-            Die();
-        }
-    }
-
-    private void Die()
-    {
-        // Add score
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.AddScore(scoreValue);
-        }
-
-        Destroy(gameObject);
-    }
-
-    private void OnTriggerEnter2D(Collider2D other)
-    {
-        // Handle collision with player bullet
-        if (other.CompareTag("PlayerBullet"))
-        {
-            TakeDamage(1);
-            Destroy(other.gameObject);
+            DestroyEnemy(true);
         }
     }
 
     /// <summary>
-    /// Configure enemy properties (called by spawner)
+    /// Remove the enemy. When killedByPlayer is true, award score.
+    /// The despawned flag distinguishes "left the screen" from "rammed player".
     /// </summary>
-    public void Configure(float speed, int health, int score, bool shooting)
+    public void DestroyEnemy(bool killedByPlayer, bool despawned = false)
     {
-        moveSpeed = speed;
-        maxHealth = health;
-        currentHealth = health;
-        scoreValue = score;
-        canShoot = shooting;
+        if (counted && GameManager.Instance != null)
+        {
+            counted = false;
+            if (killedByPlayer)
+            {
+                GameManager.Instance.OnEnemyKilled(scoreValue);
+            }
+            else
+            {
+                GameManager.Instance.OnEnemyDespawned();
+            }
+        }
+        Destroy(gameObject);
     }
 }
