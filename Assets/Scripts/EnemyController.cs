@@ -1,129 +1,119 @@
 using UnityEngine;
 
-/// <summary>
-/// Controls enemy ship behavior including movement, shooting, and health.
-/// </summary>
-public class EnemyController : MonoBehaviour
+namespace SpaceShooter
 {
-    [Header("Movement Settings")]
-    [SerializeField] private float moveSpeed = 3f;
-    [SerializeField] private float horizontalMovement = 0f;
-
-    [Header("Shooting Settings")]
-    [SerializeField] private GameObject bulletPrefab;
-    [SerializeField] private float fireRate = 2f;
-    [SerializeField] private bool canShoot = true;
-
-    [Header("Health & Score")]
-    [SerializeField] private int maxHealth = 1;
-    [SerializeField] private int scoreValue = 100;
-
-    [Header("Boundaries")]
-    [SerializeField] private float destroyY = -6f;
-
-    private int currentHealth;
-    private float nextFireTime;
-
-    public int MaxHealth => maxHealth;
-    public int ScoreValue => scoreValue;
-
-    private void Start()
+    /// <summary>
+    /// A single enemy ship. Moves straight down, optionally fires bullets at a fixed
+    /// interval, awards score when destroyed by the player, and despawns off-screen.
+    /// </summary>
+    [RequireComponent(typeof(Collider2D))]
+    public class EnemyController : MonoBehaviour
     {
-        currentHealth = maxHealth;
-        nextFireTime = Time.time + Random.Range(0.5f, fireRate);
-        
-        // Add slight random horizontal movement variation
-        horizontalMovement = Random.Range(-0.5f, 0.5f);
-    }
+        [Header("Movement")]
+        [Tooltip("Downward speed in world units per second.")]
+        [SerializeField] private float moveSpeed = 3f;
 
-    private void Update()
-    {
-        if (GameManager.Instance != null && GameManager.Instance.IsGameOver)
-            return;
+        [Header("Scoring")]
+        [Tooltip("Points awarded when the player destroys this enemy.")]
+        [SerializeField] private int scoreValue = 10;
 
-        Move();
-        HandleShooting();
-        CheckBounds();
-    }
+        [Header("Shooting (optional)")]
+        [Tooltip("If true, the enemy periodically fires bullets downward.")]
+        [SerializeField] private bool canShoot = true;
 
-    private void Move()
-    {
-        Vector3 movement = new Vector3(horizontalMovement, -1f, 0f).normalized * moveSpeed * Time.deltaTime;
-        transform.Translate(movement, Space.World);
-    }
+        [Tooltip("Bullet prefab used by this enemy.")]
+        [SerializeField] private GameObject enemyBulletPrefab;
 
-    private void HandleShooting()
-    {
-        if (!canShoot || bulletPrefab == null)
-            return;
+        [Tooltip("Seconds between enemy shots.")]
+        [SerializeField] private float fireInterval = 1.5f;
 
-        if (Time.time >= nextFireTime)
+        [Tooltip("Downward speed for enemy bullets.")]
+        [SerializeField] private float bulletSpeed = 6f;
+
+        [Header("Effects")]
+        [Tooltip("Optional explosion prefab spawned on death (particle/sprite).")]
+        [SerializeField] private GameObject explosionPrefab;
+
+        private Camera mainCamera;
+        private float nextFireTime;
+
+        private void Awake()
         {
-            Shoot();
-            nextFireTime = Time.time + fireRate + Random.Range(-0.5f, 0.5f);
+            mainCamera = Camera.main;
         }
-    }
 
-    private void Shoot()
-    {
-        Vector3 spawnPosition = transform.position + Vector3.down * 0.5f;
-        GameObject bullet = Instantiate(bulletPrefab, spawnPosition, Quaternion.identity);
-        
-        BulletController bulletController = bullet.GetComponent<BulletController>();
-        if (bulletController != null)
+        private void Start()
         {
-            bulletController.Initialize(false, Vector3.down);
+            // Randomize the first shot so a wave of enemies does not fire in unison.
+            nextFireTime = Time.time + Random.Range(0.3f, fireInterval);
         }
-    }
 
-    private void CheckBounds()
-    {
-        if (transform.position.y < destroyY)
+        private void Update()
         {
+            if (GameManager.Instance != null && GameManager.Instance.IsGameOver)
+            {
+                return;
+            }
+
+            transform.Translate(Vector3.down * moveSpeed * Time.deltaTime, Space.World);
+
+            if (canShoot && enemyBulletPrefab != null && Time.time >= nextFireTime)
+            {
+                Fire();
+                nextFireTime = Time.time + fireInterval;
+            }
+
+            DespawnIfBelowScreen();
+        }
+
+        private void Fire()
+        {
+            Vector3 spawnPos = transform.position + Vector3.down * 0.6f;
+            GameObject bulletObj = Instantiate(enemyBulletPrefab, spawnPos, Quaternion.identity);
+
+            Bullet bullet = bulletObj.GetComponent<Bullet>();
+            if (bullet != null)
+            {
+                bullet.Initialize(Vector2.down * bulletSpeed, Bullet.Owner.Enemy);
+            }
+        }
+
+        private void DespawnIfBelowScreen()
+        {
+            if (mainCamera == null)
+            {
+                return;
+            }
+
+            Vector3 viewPos = mainCamera.WorldToViewportPoint(transform.position);
+            if (viewPos.y < -0.2f)
+            {
+                Destroy(gameObject);
+            }
+        }
+
+        /// <summary>
+        /// Destroy this enemy. <paramref name="awardScore"/> is true when killed by a
+        /// player bullet (grants points), false on ramming collisions.
+        /// </summary>
+        public void DestroyEnemy(bool awardScore)
+        {
+            if (awardScore && GameManager.Instance != null)
+            {
+                GameManager.Instance.AddScore(scoreValue);
+            }
+
+            if (explosionPrefab != null)
+            {
+                Instantiate(explosionPrefab, transform.position, Quaternion.identity);
+            }
+
+            if (AudioManager.Instance != null)
+            {
+                AudioManager.Instance.PlayExplosion();
+            }
+
             Destroy(gameObject);
         }
-    }
-
-    public void TakeDamage(int damage)
-    {
-        currentHealth -= damage;
-        
-        if (currentHealth <= 0)
-        {
-            Die();
-        }
-    }
-
-    private void Die()
-    {
-        // Add score
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.AddScore(scoreValue);
-        }
-
-        Destroy(gameObject);
-    }
-
-    private void OnTriggerEnter2D(Collider2D other)
-    {
-        // Handle collision with player bullet
-        if (other.CompareTag("PlayerBullet"))
-        {
-            TakeDamage(1);
-            Destroy(other.gameObject);
-        }
-    }
-
-    /// <summary>
-    /// Configure enemy properties (called by spawner)
-    /// </summary>
-    public void Configure(float speed, int health, int score, bool shooting)
-    {
-        moveSpeed = speed;
-        maxHealth = health;
-        currentHealth = health;
-        scoreValue = score;
-        canShoot = shooting;
     }
 }
