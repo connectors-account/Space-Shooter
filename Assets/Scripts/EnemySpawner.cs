@@ -1,157 +1,69 @@
 using UnityEngine;
-using System.Collections;
 
-/// <summary>
-/// Spawns enemy ships at random positions at the top of the screen.
-/// </summary>
-public class EnemySpawner : MonoBehaviour
+namespace SpaceShooter
 {
-    [Header("Spawn Settings")]
-    [SerializeField] private GameObject[] enemyPrefabs;
-    [SerializeField] private float initialSpawnRate = 2f;
-    [SerializeField] private float minimumSpawnRate = 0.5f;
-    [SerializeField] private float spawnRateDecrease = 0.1f;
-    [SerializeField] private float difficultyIncreaseInterval = 30f;
-
-    [Header("Spawn Area")]
-    [SerializeField] private float spawnY = 6f;
-    [SerializeField] private float spawnXMin = -7f;
-    [SerializeField] private float spawnXMax = 7f;
-
-    [Header("Enemy Configuration")]
-    [SerializeField] private float enemySpeedMin = 2f;
-    [SerializeField] private float enemySpeedMax = 4f;
-    [SerializeField] private bool enemiesCanShoot = true;
-
-    private float currentSpawnRate;
-    private float nextSpawnTime;
-    private float nextDifficultyIncrease;
-    private bool isSpawning = true;
-
-    private void Start()
-    {
-        currentSpawnRate = initialSpawnRate;
-        nextSpawnTime = Time.time + currentSpawnRate;
-        nextDifficultyIncrease = Time.time + difficultyIncreaseInterval;
-    }
-
-    private void Update()
-    {
-        if (GameManager.Instance != null && GameManager.Instance.IsGameOver)
-        {
-            isSpawning = false;
-            return;
-        }
-
-        if (!isSpawning)
-            return;
-
-        // Handle spawning
-        if (Time.time >= nextSpawnTime)
-        {
-            SpawnEnemy();
-            nextSpawnTime = Time.time + currentSpawnRate;
-        }
-
-        // Increase difficulty over time
-        if (Time.time >= nextDifficultyIncrease)
-        {
-            IncreaseDifficulty();
-            nextDifficultyIncrease = Time.time + difficultyIncreaseInterval;
-        }
-    }
-
-    private void SpawnEnemy()
-    {
-        if (enemyPrefabs == null || enemyPrefabs.Length == 0)
-        {
-            Debug.LogWarning("No enemy prefabs assigned to EnemySpawner!");
-            return;
-        }
-
-        // Select random enemy prefab
-        int randomIndex = Random.Range(0, enemyPrefabs.Length);
-        GameObject enemyPrefab = enemyPrefabs[randomIndex];
-
-        if (enemyPrefab == null)
-        {
-            Debug.LogWarning("Enemy prefab at index " + randomIndex + " is null!");
-            return;
-        }
-
-        // Calculate spawn position
-        float spawnX = Random.Range(spawnXMin, spawnXMax);
-        Vector3 spawnPosition = new Vector3(spawnX, spawnY, 0f);
-
-        // Instantiate enemy
-        GameObject enemy = Instantiate(enemyPrefab, spawnPosition, Quaternion.Euler(0f, 0f, 180f));
-
-        // Configure enemy properties
-        EnemyController enemyController = enemy.GetComponent<EnemyController>();
-        if (enemyController != null)
-        {
-            float randomSpeed = Random.Range(enemySpeedMin, enemySpeedMax);
-            enemyController.Configure(randomSpeed, 1, 100, enemiesCanShoot);
-        }
-    }
-
-    private void IncreaseDifficulty()
-    {
-        // Decrease spawn rate (spawn enemies more frequently)
-        currentSpawnRate = Mathf.Max(minimumSpawnRate, currentSpawnRate - spawnRateDecrease);
-        
-        // Increase enemy speed range
-        enemySpeedMin = Mathf.Min(enemySpeedMin + 0.2f, 5f);
-        enemySpeedMax = Mathf.Min(enemySpeedMax + 0.3f, 8f);
-
-        Debug.Log($"Difficulty increased! Spawn rate: {currentSpawnRate:F2}s, Speed: {enemySpeedMin:F1}-{enemySpeedMax:F1}");
-    }
-
     /// <summary>
-    /// Start or resume spawning.
+    /// Spawns enemies at fixed intervals along the top edge of the screen at random
+    /// horizontal positions. Fixed difficulty (no progressive wave scaling), per the
+    /// simplified scope.
     /// </summary>
-    public void StartSpawning()
+    public class EnemySpawner : MonoBehaviour
     {
-        isSpawning = true;
-    }
+        [Header("Spawning")]
+        [Tooltip("Enemy prefab to spawn.")]
+        [SerializeField] private GameObject enemyPrefab;
 
-    /// <summary>
-    /// Stop spawning enemies.
-    /// </summary>
-    public void StopSpawning()
-    {
-        isSpawning = false;
-    }
+        [Tooltip("Seconds between enemy spawns.")]
+        [SerializeField] private float spawnInterval = 1.5f;
 
-    /// <summary>
-    /// Reset spawner to initial settings.
-    /// </summary>
-    public void ResetSpawner()
-    {
-        currentSpawnRate = initialSpawnRate;
-        enemySpeedMin = 2f;
-        enemySpeedMax = 4f;
-        isSpawning = true;
-        nextSpawnTime = Time.time + currentSpawnRate;
-        nextDifficultyIncrease = Time.time + difficultyIncreaseInterval;
-    }
+        [Tooltip("Horizontal padding from the screen edges when picking a spawn X.")]
+        [SerializeField] private float horizontalPadding = 0.6f;
 
-    /// <summary>
-    /// Destroy all existing enemies in the scene.
-    /// </summary>
-    public void ClearAllEnemies()
-    {
-        GameObject[] enemies = GameObject.FindGameObjectsWithTag("Enemy");
-        foreach (GameObject enemy in enemies)
+        [Tooltip("How far above the top edge enemies appear before entering view.")]
+        [SerializeField] private float spawnHeightOffset = 0.5f;
+
+        private Camera mainCamera;
+        private float nextSpawnTime;
+
+        private void Awake()
         {
-            Destroy(enemy);
+            mainCamera = Camera.main;
         }
 
-        // Also clear enemy bullets
-        GameObject[] enemyBullets = GameObject.FindGameObjectsWithTag("EnemyBullet");
-        foreach (GameObject bullet in enemyBullets)
+        private void Start()
         {
-            Destroy(bullet);
+            nextSpawnTime = Time.time + spawnInterval;
+        }
+
+        private void Update()
+        {
+            if (GameManager.Instance != null && GameManager.Instance.IsGameOver)
+            {
+                return;
+            }
+
+            if (enemyPrefab != null && Time.time >= nextSpawnTime)
+            {
+                SpawnEnemy();
+                nextSpawnTime = Time.time + spawnInterval;
+            }
+        }
+
+        private void SpawnEnemy()
+        {
+            if (mainCamera == null)
+            {
+                return;
+            }
+
+            Vector3 min = mainCamera.ViewportToWorldPoint(new Vector3(0f, 1f, 0f));
+            Vector3 max = mainCamera.ViewportToWorldPoint(new Vector3(1f, 1f, 0f));
+
+            float spawnX = Random.Range(min.x + horizontalPadding, max.x - horizontalPadding);
+            float spawnY = max.y + spawnHeightOffset;
+
+            Vector3 spawnPos = new Vector3(spawnX, spawnY, 0f);
+            Instantiate(enemyPrefab, spawnPos, Quaternion.identity);
         }
     }
 }

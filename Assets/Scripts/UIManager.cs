@@ -1,167 +1,90 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.SceneManagement;
 
-/// <summary>
-/// Manages all UI elements including health display, score, and game over screen.
-/// </summary>
-public class UIManager : MonoBehaviour
+namespace SpaceShooter
 {
-    public static UIManager Instance { get; private set; }
-
-    [Header("HUD Elements")]
-    [SerializeField] private Text scoreText;
-    [SerializeField] private Text healthText;
-    [SerializeField] private Image[] healthIcons;
-
-    [Header("Game Over Panel")]
-    [SerializeField] private GameObject gameOverPanel;
-    [SerializeField] private Text gameOverScoreText;
-    [SerializeField] private Text highScoreText;
-
-    [Header("Pause Menu")]
-    [SerializeField] private GameObject pauseMenuPanel;
-
-    private void Awake()
-    {
-        // Singleton pattern
-        if (Instance == null)
-        {
-            Instance = this;
-        }
-        else
-        {
-            Destroy(gameObject);
-            return;
-        }
-    }
-
-    private void Start()
-    {
-        // Ensure panels are hidden at start
-        HideGameOver();
-        HidePauseMenu();
-    }
-
     /// <summary>
-    /// Update the score display.
+    /// Manages the in-game HUD (score + lives) and the Game Over panel.
+    /// Uses Unity's legacy UI (Text/Button) so no extra packages are required.
     /// </summary>
-    public void UpdateScore(int score)
+    public class UIManager : MonoBehaviour
     {
-        if (scoreText != null)
-        {
-            scoreText.text = $"Score: {score}";
-        }
-    }
+        [Header("HUD")]
+        [Tooltip("Text element showing the current score.")]
+        [SerializeField] private Text scoreText;
 
-    /// <summary>
-    /// Update the health display.
-    /// </summary>
-    public void UpdateHealth(int currentHealth, int maxHealth)
-    {
-        // Update text display
-        if (healthText != null)
+        [Tooltip("Text element showing remaining lives.")]
+        [SerializeField] private Text livesText;
+
+        [Header("Game Over Panel")]
+        [Tooltip("Root panel shown when the player dies. Hidden at start.")]
+        [SerializeField] private GameObject gameOverPanel;
+
+        [Tooltip("Text element showing the final score on the Game Over panel.")]
+        [SerializeField] private Text finalScoreText;
+
+        [Header("Scene Names")]
+        [Tooltip("Name of the gameplay scene (used by Restart).")]
+        [SerializeField] private string gameSceneName = "Game";
+
+        [Tooltip("Name of the main menu scene.")]
+        [SerializeField] private string mainMenuSceneName = "MainMenu";
+
+        private void Awake()
         {
-            healthText.text = $"Health: {currentHealth}/{maxHealth}";
+            HideGameOver();
         }
 
-        // Update health icons if available
-        if (healthIcons != null && healthIcons.Length > 0)
+        public void UpdateScore(int score)
         {
-            for (int i = 0; i < healthIcons.Length; i++)
+            if (scoreText != null)
             {
-                if (healthIcons[i] != null)
-                {
-                    healthIcons[i].enabled = i < currentHealth;
-                }
+                scoreText.text = "Score: " + score;
             }
         }
-    }
 
-    /// <summary>
-    /// Show the game over screen with final score.
-    /// </summary>
-    public void ShowGameOver(int finalScore, int highScore)
-    {
-        if (gameOverPanel != null)
+        public void UpdateLives(int lives)
         {
-            gameOverPanel.SetActive(true);
+            if (livesText != null)
+            {
+                livesText.text = "Lives: " + lives;
+            }
         }
 
-        if (gameOverScoreText != null)
+        public void ShowGameOver(int finalScore)
         {
-            gameOverScoreText.text = $"Final Score: {finalScore}";
+            if (finalScoreText != null)
+            {
+                finalScoreText.text = "Final Score: " + finalScore;
+            }
+
+            if (gameOverPanel != null)
+            {
+                gameOverPanel.SetActive(true);
+            }
         }
 
-        if (highScoreText != null)
+        public void HideGameOver()
         {
-            highScoreText.text = $"High Score: {highScore}";
+            if (gameOverPanel != null)
+            {
+                gameOverPanel.SetActive(false);
+            }
         }
-    }
 
-    /// <summary>
-    /// Hide the game over screen.
-    /// </summary>
-    public void HideGameOver()
-    {
-        if (gameOverPanel != null)
+        /// <summary>Hooked to the Restart button OnClick in the Inspector.</summary>
+        public void RestartGame()
         {
-            gameOverPanel.SetActive(false);
+            Time.timeScale = 1f;
+            SceneManager.LoadScene(gameSceneName);
         }
-    }
 
-    /// <summary>
-    /// Show the pause menu.
-    /// </summary>
-    public void ShowPauseMenu()
-    {
-        if (pauseMenuPanel != null)
+        /// <summary>Hooked to a "Main Menu" button OnClick in the Inspector.</summary>
+        public void GoToMainMenu()
         {
-            pauseMenuPanel.SetActive(true);
-        }
-    }
-
-    /// <summary>
-    /// Hide the pause menu.
-    /// </summary>
-    public void HidePauseMenu()
-    {
-        if (pauseMenuPanel != null)
-        {
-            pauseMenuPanel.SetActive(false);
-        }
-    }
-
-    // Button callback methods (can be assigned in Unity Inspector)
-    
-    public void OnRestartButtonClicked()
-    {
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.RestartGame();
-        }
-    }
-
-    public void OnResumeButtonClicked()
-    {
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.TogglePause();
-        }
-    }
-
-    public void OnQuitButtonClicked()
-    {
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.QuitGame();
-        }
-    }
-
-    private void OnDestroy()
-    {
-        if (Instance == this)
-        {
-            Instance = null;
+            Time.timeScale = 1f;
+            SceneManager.LoadScene(mainMenuSceneName);
         }
     }
 }
