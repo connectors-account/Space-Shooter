@@ -1,0 +1,17 @@
+{
+    "name": "SpaceShooter",
+    "rootNamespace": "SpaceShooter",
+    "references": [
+        "SpaceShooterGame"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false,
+    "_comment": "Root project assembly descriptor. Unity only compiles asmdefs located under Assets/. The authoritative game assembly is Assets/Scripts/SpaceShooterGame.asmdef; this file documents the root assembly name for tooling."
+}
