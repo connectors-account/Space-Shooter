@@ -1,315 +1,157 @@
+using System.Collections;
 using UnityEngine;
 
 namespace SpaceShooter.Player
 {
     /// <summary>
-    /// Controls player ship movement, shooting, health, and power-up states.
-    /// Attach to the Player ship GameObject.
+    /// Handles player movement, screen clamping, tilt, invincibility flashing and speed power-ups.
     /// </summary>
+    [RequireComponent(typeof(SpriteRenderer))]
     public class PlayerController : MonoBehaviour
     {
-        [Header("Movement Settings")]
+        [Header("Movement")]
         [SerializeField] private float moveSpeed = 8f;
-        [SerializeField] private float smoothTime = 0.05f;
+        [SerializeField] private float smoothing = 12f;
+        [SerializeField] private float tiltAngle = 15f;
 
-        [Header("Boundaries (Viewport)")]
-        [SerializeField] private float minX = -8.5f;
-        [SerializeField] private float maxX = 8.5f;
-        [SerializeField] private float minY = -4.5f;
-        [SerializeField] private float maxY = 4.5f;
+        [Header("Bounds Padding")]
+        [SerializeField] private float horizontalPadding = 0.4f;
+        [SerializeField] private float verticalPadding = 0.4f;
 
-        [Header("Health Settings")]
-        [SerializeField] private int maxHealth = 100;
-        [SerializeField] private float invincibilityDuration = 1.5f;
+        [Header("Invincibility")]
+        [SerializeField] private float flashInterval = 0.1f;
 
-        [Header("Shooting Settings")]
-        [SerializeField] private GameObject bulletPrefab;
-        [SerializeField] private Transform firePoint;
-        [SerializeField] private float fireRate = 0.25f;
-        [SerializeField] private float rapidFireRate = 0.1f;
-        [SerializeField] private float rapidFireDuration = 5f;
-
-        [Header("Shield Settings")]
-        [SerializeField] private float shieldDuration = 8f;
-        [SerializeField] private GameObject shieldVisual; // child object for shield effect
-
-        [Header("Visual Feedback")]
-        [SerializeField] private SpriteRenderer spriteRenderer;
-        [SerializeField] private Color damageFlashColor = Color.red;
-        [SerializeField] private float flashDuration = 0.1f;
-
-        // ---- Runtime State ----
-        private int currentHealth;
-        private float nextFireTime;
-        private float currentFireRate;
-        private bool isRapidFireActive;
-        private float rapidFireEndTime;
-        private bool isShieldActive;
-        private float shieldEndTime;
-        private bool isInvincible;
-        private float invincibilityEndTime;
-        private Vector2 velocity;
-        private Color originalColor;
-        private bool isDead;
-
-        // ---- Public Properties ----
-        public int CurrentHealth => currentHealth;
-        public int MaxHealth => maxHealth;
-        public bool IsShieldActive => isShieldActive;
-        public bool IsRapidFireActive => isRapidFireActive;
-        public bool IsDead => isDead;
-
-        // ---- Events ----
-        public event System.Action<int, int> OnHealthChanged;  // currentHP, maxHP
-        public event System.Action OnPlayerDeath;
+        private Camera cam;
+        private SpriteRenderer sr;
+        private TrailRenderer trail;
+        private Vector2 inputVector;
+        private float currentSpeed;
+        private float speedMultiplier = 1f;
+        private Coroutine speedBoostRoutine;
+        private Coroutine flashRoutine;
+        private bool controlsEnabled = true;
 
         private void Awake()
         {
-            if (spriteRenderer == null)
-                spriteRenderer = GetComponent<SpriteRenderer>();
+            cam = Camera.main;
+            sr = GetComponent<SpriteRenderer>();
+            trail = GetComponent<TrailRenderer>();
+            currentSpeed = moveSpeed;
         }
 
-        private void Start()
+        private void OnEnable()
         {
-            currentHealth = maxHealth;
-            currentFireRate = fireRate;
-            isDead = false;
-
-            if (spriteRenderer != null)
-                originalColor = spriteRenderer.color;
-
-            if (shieldVisual != null)
-                shieldVisual.SetActive(false);
-
-            OnHealthChanged?.Invoke(currentHealth, maxHealth);
+            controlsEnabled = true;
         }
 
         private void Update()
         {
-            if (isDead) return;
-
-            HandleMovement();
-            HandleShooting();
-            HandlePowerUpTimers();
-            HandleInvincibility();
-        }
-
-        // ========== MOVEMENT ==========
-        private void HandleMovement()
-        {
-            float horizontal = Input.GetAxisRaw("Horizontal");
-            float vertical = Input.GetAxisRaw("Vertical");
-
-            Vector2 targetVelocity = new Vector2(horizontal, vertical).normalized * moveSpeed;
-            Vector2 currentVel = velocity;
-            velocity = Vector2.SmoothDamp(velocity, targetVelocity, ref currentVel, smoothTime);
-
-            Vector3 newPosition = transform.position + (Vector3)velocity * Time.deltaTime;
-
-            // Clamp to screen boundaries
-            newPosition.x = Mathf.Clamp(newPosition.x, minX, maxX);
-            newPosition.y = Mathf.Clamp(newPosition.y, minY, maxY);
-
-            transform.position = newPosition;
-        }
-
-        // ========== SHOOTING ==========
-        private void HandleShooting()
-        {
-            if (Input.GetKey(KeyCode.Space) && Time.time >= nextFireTime)
+            if (!controlsEnabled)
             {
-                FireBullet();
-                nextFireTime = Time.time + currentFireRate;
-            }
-        }
-
-        private void FireBullet()
-        {
-            if (bulletPrefab == null || firePoint == null) return;
-
-            GameObject bullet = Instantiate(bulletPrefab, firePoint.position, Quaternion.identity);
-
-            // Tag bullet as player bullet
-            bullet.tag = "PlayerBullet";
-
-            // Play shoot sound
-            Managers.AudioManager.Instance?.PlayShootSound();
-        }
-
-        // ========== HEALTH & DAMAGE ==========
-        public void TakeDamage(int damage)
-        {
-            if (isDead || isInvincible || isShieldActive) return;
-
-            currentHealth -= damage;
-            currentHealth = Mathf.Max(currentHealth, 0);
-
-            OnHealthChanged?.Invoke(currentHealth, maxHealth);
-
-            // Visual feedback
-            StartCoroutine(DamageFlash());
-
-            // Brief invincibility after being hit
-            isInvincible = true;
-            invincibilityEndTime = Time.time + invincibilityDuration;
-
-            Managers.AudioManager.Instance?.PlayExplosionSound();
-
-            if (currentHealth <= 0)
-            {
-                Die();
-            }
-        }
-
-        public void Heal(int amount)
-        {
-            if (isDead) return;
-
-            currentHealth += amount;
-            currentHealth = Mathf.Min(currentHealth, maxHealth);
-            OnHealthChanged?.Invoke(currentHealth, maxHealth);
-        }
-
-        private void Die()
-        {
-            isDead = true;
-            OnPlayerDeath?.Invoke();
-
-            Managers.AudioManager.Instance?.PlayExplosionSound();
-
-            // Disable the sprite but keep the object alive for game-over logic
-            if (spriteRenderer != null)
-                spriteRenderer.enabled = false;
-
-            // Disable collider
-            Collider2D col = GetComponent<Collider2D>();
-            if (col != null) col.enabled = false;
-        }
-
-        // ========== POWER-UPS ==========
-        public void ActivateRapidFire()
-        {
-            isRapidFireActive = true;
-            currentFireRate = rapidFireRate;
-            rapidFireEndTime = Time.time + rapidFireDuration;
-        }
-
-        public void ActivateShield()
-        {
-            isShieldActive = true;
-            shieldEndTime = Time.time + shieldDuration;
-
-            if (shieldVisual != null)
-                shieldVisual.SetActive(true);
-        }
-
-        private void HandlePowerUpTimers()
-        {
-            // Rapid fire timer
-            if (isRapidFireActive && Time.time >= rapidFireEndTime)
-            {
-                isRapidFireActive = false;
-                currentFireRate = fireRate;
+                inputVector = Vector2.zero;
+                return;
             }
 
-            // Shield timer
-            if (isShieldActive && Time.time >= shieldEndTime)
-            {
-                isShieldActive = false;
-                if (shieldVisual != null)
-                    shieldVisual.SetActive(false);
-            }
+            float h = Input.GetAxisRaw("Horizontal");
+            float v = Input.GetAxisRaw("Vertical");
+            inputVector = new Vector2(h, v).normalized;
         }
 
-        private void HandleInvincibility()
+        private void FixedUpdate()
         {
-            if (isInvincible && Time.time >= invincibilityEndTime)
-            {
-                isInvincible = false;
-                if (spriteRenderer != null)
-                    spriteRenderer.color = originalColor;
-            }
-
-            // Blink effect while invincible
-            if (isInvincible && spriteRenderer != null)
-            {
-                float alpha = Mathf.PingPong(Time.time * 10f, 1f) > 0.5f ? 1f : 0.3f;
-                Color c = originalColor;
-                c.a = alpha;
-                spriteRenderer.color = c;
-            }
+            MovePlayer();
         }
 
-        // ========== VISUAL EFFECTS ==========
-        private System.Collections.IEnumerator DamageFlash()
+        private void MovePlayer()
         {
-            if (spriteRenderer == null) yield break;
+            Vector3 delta = (Vector3)inputVector * currentSpeed * speedMultiplier * Time.fixedDeltaTime;
+            Vector3 target = transform.position + delta;
+            target = ClampToScreen(target);
+            transform.position = Vector3.Lerp(transform.position, target, smoothing * Time.fixedDeltaTime);
 
-            spriteRenderer.color = damageFlashColor;
-            yield return new WaitForSeconds(flashDuration);
-            spriteRenderer.color = originalColor;
+            // Tilt based on horizontal input.
+            float targetTilt = -inputVector.x * tiltAngle;
+            Quaternion targetRot = Quaternion.Euler(0f, 0f, targetTilt);
+            transform.rotation = Quaternion.Lerp(transform.rotation, targetRot, smoothing * Time.fixedDeltaTime);
         }
 
-        // ========== COLLISION ==========
-        private void OnTriggerEnter2D(Collider2D other)
+        private Vector3 ClampToScreen(Vector3 position)
         {
-            if (isDead) return;
+            if (cam == null) cam = Camera.main;
+            if (cam == null) return position;
 
-            // Collide with enemy bullets
-            if (other.CompareTag("EnemyBullet"))
-            {
-                Weapons.BulletController bullet = other.GetComponent<Weapons.BulletController>();
-                if (bullet != null)
-                {
-                    TakeDamage(bullet.Damage);
-                    Destroy(other.gameObject);
-                }
-            }
+            Vector3 min = cam.ViewportToWorldPoint(new Vector3(0f, 0f, Mathf.Abs(cam.transform.position.z)));
+            Vector3 max = cam.ViewportToWorldPoint(new Vector3(1f, 1f, Mathf.Abs(cam.transform.position.z)));
 
-            // Collide with enemies directly
-            if (other.CompareTag("Enemy"))
-            {
-                TakeDamage(20);
-            }
-
-            // Collide with power-ups
-            if (other.CompareTag("PowerUp"))
-            {
-                PowerUps.PowerUpController powerUp = other.GetComponent<PowerUps.PowerUpController>();
-                if (powerUp != null)
-                {
-                    powerUp.ApplyEffect(this);
-                    Destroy(other.gameObject);
-                }
-            }
+            position.x = Mathf.Clamp(position.x, min.x + horizontalPadding, max.x - horizontalPadding);
+            position.y = Mathf.Clamp(position.y, min.y + verticalPadding, max.y - verticalPadding);
+            position.z = 0f;
+            return position;
         }
 
-        /// <summary>
-        /// Resets the player to initial state (for restarting the game).
-        /// </summary>
-        public void ResetPlayer()
+        // ---------------- Power-up: speed boost ----------------
+
+        public void ApplySpeedBoost(float multiplier, float duration)
         {
-            isDead = false;
-            currentHealth = maxHealth;
-            currentFireRate = fireRate;
-            isRapidFireActive = false;
-            isShieldActive = false;
-            isInvincible = false;
-            transform.position = new Vector3(0, -3f, 0);
+            if (speedBoostRoutine != null) StopCoroutine(speedBoostRoutine);
+            speedBoostRoutine = StartCoroutine(SpeedBoostRoutine(multiplier, duration));
+        }
 
-            if (spriteRenderer != null)
+        private IEnumerator SpeedBoostRoutine(float multiplier, float duration)
+        {
+            speedMultiplier = multiplier;
+            yield return new WaitForSeconds(duration);
+            speedMultiplier = 1f;
+            speedBoostRoutine = null;
+        }
+
+        // ---------------- Invincibility flashing ----------------
+
+        public void StartInvincibilityFlash(float duration)
+        {
+            if (flashRoutine != null) StopCoroutine(flashRoutine);
+            flashRoutine = StartCoroutine(FlashRoutine(duration));
+        }
+
+        private IEnumerator FlashRoutine(float duration)
+        {
+            float elapsed = 0f;
+            bool visible = true;
+            Color baseColor = sr.color;
+            while (elapsed < duration)
             {
-                spriteRenderer.enabled = true;
-                spriteRenderer.color = originalColor;
+                visible = !visible;
+                Color c = baseColor;
+                c.a = visible ? 1f : 0.3f;
+                sr.color = c;
+                yield return new WaitForSeconds(flashInterval);
+                elapsed += flashInterval;
             }
+            Color restore = baseColor;
+            restore.a = 1f;
+            sr.color = restore;
+            flashRoutine = null;
+        }
 
-            Collider2D col = GetComponent<Collider2D>();
-            if (col != null) col.enabled = true;
+        public void SetControlsEnabled(bool enabled)
+        {
+            controlsEnabled = enabled;
+        }
 
-            if (shieldVisual != null)
-                shieldVisual.SetActive(false);
-
-            OnHealthChanged?.Invoke(currentHealth, maxHealth);
+        public void ResetToCenter()
+        {
+            if (cam == null) cam = Camera.main;
+            Vector3 pos = transform.position;
+            pos.x = 0f;
+            if (cam != null)
+            {
+                Vector3 min = cam.ViewportToWorldPoint(new Vector3(0.5f, 0.15f, Mathf.Abs(cam.transform.position.z)));
+                pos.y = min.y;
+            }
+            pos.z = 0f;
+            transform.position = pos;
+            transform.rotation = Quaternion.identity;
+            if (trail != null) trail.Clear();
         }
     }
 }
