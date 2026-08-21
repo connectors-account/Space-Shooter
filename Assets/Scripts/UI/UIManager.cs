@@ -1,333 +1,106 @@
+using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.UI;
 
 namespace SpaceShooter.UI
 {
     /// <summary>
-    /// Manages all UI elements: Main Menu, HUD, Game Over screen, Pause menu.
+    /// Central UI coordinator for the game scene. Manages panel show/hide with
+    /// lightweight coroutine animations (no external tween dependency).
     /// </summary>
     public class UIManager : MonoBehaviour
     {
-        [Header("UI Panels")]
-        [SerializeField] private GameObject mainMenuPanel;
-        [SerializeField] private GameObject hudPanel;
-        [SerializeField] private GameObject gameOverPanel;
-        [SerializeField] private GameObject pausePanel;
-        [SerializeField] private GameObject waveAnnouncementPanel;
+        public static UIManager Instance { get; private set; }
 
-        [Header("Main Menu Elements")]
-        [SerializeField] private Text titleText;
-        [SerializeField] private Text highScoreMenuText;
-        [SerializeField] private Button startButton;
-        [SerializeField] private Button quitButton;
-
-        [Header("HUD Elements")]
-        [SerializeField] private Text scoreText;
-        [SerializeField] private Text waveText;
-        [SerializeField] private Slider healthBar;
-        [SerializeField] private Text healthText;
-        [SerializeField] private Image shieldIcon;
-        [SerializeField] private Image rapidFireIcon;
-
-        [Header("Game Over Elements")]
-        [SerializeField] private Text gameOverTitleText;
-        [SerializeField] private Text finalScoreText;
-        [SerializeField] private Text finalWaveText;
-        [SerializeField] private Text highScoreText;
-        [SerializeField] private Text newHighScoreText;
-        [SerializeField] private Button restartButton;
-        [SerializeField] private Button menuButton;
-
-        [Header("Pause Elements")]
-        [SerializeField] private Button resumeButton;
-        [SerializeField] private Button pauseMenuButton;
-
-        [Header("Wave Announcement")]
-        [SerializeField] private Text waveAnnouncementText;
-        [SerializeField] private float announcementDuration = 2f;
-
-        private Managers.GameManager gameManager;
-
-        private void Start()
+        [System.Serializable]
+        public class Panel
         {
-            gameManager = Managers.GameManager.Instance;
+            public string name;
+            public CanvasGroup group;
+            public GameObject root;
+            [System.NonSerialized] public Coroutine animRoutine;
+        }
 
-            // Setup button listeners
-            SetupButtons();
+        [Header("Panels")]
+        [SerializeField] private List<Panel> panels = new List<Panel>();
 
-            // Subscribe to GameManager events
-            if (gameManager != null)
+        [Header("Animation")]
+        [SerializeField] private float fadeDuration = 0.25f;
+
+        private readonly Dictionary<string, Panel> panelLookup = new Dictionary<string, Panel>();
+
+        private void Awake()
+        {
+            if (Instance != null && Instance != this)
             {
-                gameManager.OnScoreChanged += UpdateScore;
-                gameManager.OnWaveChanged += UpdateWave;
-                gameManager.OnGameStateChanged += HandleGameStateChanged;
+                Destroy(gameObject);
+                return;
             }
+            Instance = this;
 
-            // Find and subscribe to player events
-            Player.PlayerController player = FindObjectOfType<Player.PlayerController>();
-            if (player != null)
+            foreach (Panel p in panels)
             {
-                player.OnHealthChanged += UpdateHealth;
-                player.OnPlayerDeath += OnPlayerDeath;
-            }
-
-            // Show main menu initially
-            ShowMainMenu();
-        }
-
-        private void SetupButtons()
-        {
-            if (startButton != null)
-                startButton.onClick.AddListener(OnStartClicked);
-
-            if (quitButton != null)
-                quitButton.onClick.AddListener(OnQuitClicked);
-
-            if (restartButton != null)
-                restartButton.onClick.AddListener(OnRestartClicked);
-
-            if (menuButton != null)
-                menuButton.onClick.AddListener(OnMenuClicked);
-
-            if (resumeButton != null)
-                resumeButton.onClick.AddListener(OnResumeClicked);
-
-            if (pauseMenuButton != null)
-                pauseMenuButton.onClick.AddListener(OnMenuClicked);
-        }
-
-        // ========== PANEL MANAGEMENT ==========
-
-        private void ShowMainMenu()
-        {
-            SetAllPanelsInactive();
-            if (mainMenuPanel != null) mainMenuPanel.SetActive(true);
-
-            if (highScoreMenuText != null && gameManager != null)
-                highScoreMenuText.text = "High Score: " + gameManager.HighScore;
-        }
-
-        private void ShowHUD()
-        {
-            SetAllPanelsInactive();
-            if (hudPanel != null) hudPanel.SetActive(true);
-        }
-
-        private void ShowGameOver()
-        {
-            // Keep HUD visible behind game over
-            if (gameOverPanel != null) gameOverPanel.SetActive(true);
-
-            if (gameManager != null)
-            {
-                if (finalScoreText != null)
-                    finalScoreText.text = "Score: " + gameManager.Score;
-
-                if (finalWaveText != null)
-                    finalWaveText.text = "Wave Reached: " + gameManager.CurrentWave;
-
-                if (highScoreText != null)
-                    highScoreText.text = "High Score: " + gameManager.HighScore;
-
-                if (newHighScoreText != null)
-                    newHighScoreText.gameObject.SetActive(gameManager.Score >= gameManager.HighScore && gameManager.Score > 0);
+                if (!string.IsNullOrEmpty(p.name)) panelLookup[p.name] = p;
             }
         }
 
-        private void ShowPauseMenu()
+        public void ShowPanel(string panelName)
         {
-            if (pausePanel != null) pausePanel.SetActive(true);
-        }
-
-        private void HidePauseMenu()
-        {
-            if (pausePanel != null) pausePanel.SetActive(false);
-        }
-
-        private void SetAllPanelsInactive()
-        {
-            if (mainMenuPanel != null) mainMenuPanel.SetActive(false);
-            if (hudPanel != null) hudPanel.SetActive(false);
-            if (gameOverPanel != null) gameOverPanel.SetActive(false);
-            if (pausePanel != null) pausePanel.SetActive(false);
-            if (waveAnnouncementPanel != null) waveAnnouncementPanel.SetActive(false);
-        }
-
-        // ========== EVENT HANDLERS ==========
-
-        private void HandleGameStateChanged(Managers.GameManager.GameState newState)
-        {
-            switch (newState)
+            if (!panelLookup.TryGetValue(panelName, out Panel panel)) return;
+            if (panel.root != null) panel.root.SetActive(true);
+            if (panel.group != null)
             {
-                case Managers.GameManager.GameState.MainMenu:
-                    ShowMainMenu();
-                    break;
-
-                case Managers.GameManager.GameState.Playing:
-                    ShowHUD();
-                    HidePauseMenu();
-                    break;
-
-                case Managers.GameManager.GameState.Paused:
-                    ShowPauseMenu();
-                    break;
-
-                case Managers.GameManager.GameState.GameOver:
-                    ShowGameOver();
-                    break;
+                StopCoroutineFor(panel);
+                panel.group.blocksRaycasts = true;
+                panel.group.interactable = true;
+                panel.animRoutine = StartCoroutine(Fade(panel.group, 1f));
             }
         }
 
-        private void UpdateScore(int newScore)
+        public void HidePanel(string panelName)
         {
-            if (scoreText != null)
-                scoreText.text = "Score: " + newScore;
-        }
-
-        private void UpdateWave(int newWave)
-        {
-            if (waveText != null)
-                waveText.text = "Wave " + newWave;
-
-            // Show wave announcement
-            StartCoroutine(ShowWaveAnnouncement(newWave));
-
-            Managers.AudioManager.Instance?.PlayWaveStartSound();
-        }
-
-        private void UpdateHealth(int currentHP, int maxHP)
-        {
-            if (healthBar != null)
+            if (!panelLookup.TryGetValue(panelName, out Panel panel)) return;
+            if (panel.group != null)
             {
-                healthBar.maxValue = maxHP;
-                healthBar.value = currentHP;
+                StopCoroutineFor(panel);
+                panel.group.blocksRaycasts = false;
+                panel.group.interactable = false;
+                panel.animRoutine = StartCoroutine(FadeAndDisable(panel));
             }
-
-            if (healthText != null)
-                healthText.text = currentHP + " / " + maxHP;
-        }
-
-        private void OnPlayerDeath()
-        {
-            Managers.AudioManager.Instance?.PlayGameOverSound();
-            gameManager?.GameOver();
-        }
-
-        // ========== BUTTON CALLBACKS ==========
-
-        private void OnStartClicked()
-        {
-            Managers.AudioManager.Instance?.PlayButtonClickSound();
-
-            // Reset player
-            Player.PlayerController player = FindObjectOfType<Player.PlayerController>();
-            if (player != null)
+            else if (panel.root != null)
             {
-                player.ResetPlayer();
-                // Re-subscribe in case events were lost
-                player.OnHealthChanged -= UpdateHealth;
-                player.OnPlayerDeath -= OnPlayerDeath;
-                player.OnHealthChanged += UpdateHealth;
-                player.OnPlayerDeath += OnPlayerDeath;
-            }
-
-            // Clear existing enemies
-            Managers.SpawnManager spawner = FindObjectOfType<Managers.SpawnManager>();
-            if (spawner != null)
-                spawner.ClearAllEnemies();
-
-            gameManager?.StartGame();
-        }
-
-        private void OnRestartClicked()
-        {
-            Managers.AudioManager.Instance?.PlayButtonClickSound();
-
-            Player.PlayerController player = FindObjectOfType<Player.PlayerController>();
-            if (player != null)
-            {
-                player.ResetPlayer();
-                player.OnHealthChanged -= UpdateHealth;
-                player.OnPlayerDeath -= OnPlayerDeath;
-                player.OnHealthChanged += UpdateHealth;
-                player.OnPlayerDeath += OnPlayerDeath;
-            }
-
-            Managers.SpawnManager spawner = FindObjectOfType<Managers.SpawnManager>();
-            if (spawner != null)
-                spawner.ClearAllEnemies();
-
-            gameManager?.RestartGame();
-        }
-
-        private void OnMenuClicked()
-        {
-            Managers.AudioManager.Instance?.PlayButtonClickSound();
-
-            Managers.SpawnManager spawner = FindObjectOfType<Managers.SpawnManager>();
-            if (spawner != null)
-                spawner.ClearAllEnemies();
-
-            gameManager?.ReturnToMenu();
-        }
-
-        private void OnResumeClicked()
-        {
-            Managers.AudioManager.Instance?.PlayButtonClickSound();
-            gameManager?.TogglePause();
-        }
-
-        private void OnQuitClicked()
-        {
-            Managers.AudioManager.Instance?.PlayButtonClickSound();
-
-            #if UNITY_EDITOR
-                UnityEditor.EditorApplication.isPlaying = false;
-            #else
-                Application.Quit();
-            #endif
-        }
-
-        // ========== WAVE ANNOUNCEMENT ==========
-
-        private System.Collections.IEnumerator ShowWaveAnnouncement(int wave)
-        {
-            if (waveAnnouncementPanel != null && waveAnnouncementText != null)
-            {
-                waveAnnouncementText.text = "WAVE " + wave;
-                waveAnnouncementPanel.SetActive(true);
-
-                yield return new WaitForSeconds(announcementDuration);
-
-                waveAnnouncementPanel.SetActive(false);
+                panel.root.SetActive(false);
             }
         }
 
-        // ========== HUD POWER-UP ICONS ==========
-
-        private void Update()
+        private void StopCoroutineFor(Panel panel)
         {
-            // Update power-up status icons
-            Player.PlayerController player = FindObjectOfType<Player.PlayerController>();
-            if (player != null)
-            {
-                if (shieldIcon != null)
-                    shieldIcon.gameObject.SetActive(player.IsShieldActive);
-
-                if (rapidFireIcon != null)
-                    rapidFireIcon.gameObject.SetActive(player.IsRapidFireActive);
-            }
+            if (panel.animRoutine != null) StopCoroutine(panel.animRoutine);
         }
 
-        private void OnDestroy()
+        private IEnumerator Fade(CanvasGroup group, float target)
         {
-            // Unsubscribe from events
-            if (gameManager != null)
+            float start = group.alpha;
+            float elapsed = 0f;
+            while (elapsed < fadeDuration)
             {
-                gameManager.OnScoreChanged -= UpdateScore;
-                gameManager.OnWaveChanged -= UpdateWave;
-                gameManager.OnGameStateChanged -= HandleGameStateChanged;
+                elapsed += Time.unscaledDeltaTime;
+                group.alpha = Mathf.Lerp(start, target, elapsed / fadeDuration);
+                yield return null;
             }
+            group.alpha = target;
+        }
+
+        private IEnumerator FadeAndDisable(Panel panel)
+        {
+            yield return Fade(panel.group, 0f);
+            if (panel.root != null) panel.root.SetActive(false);
+        }
+
+        public bool IsPanelVisible(string panelName)
+        {
+            if (!panelLookup.TryGetValue(panelName, out Panel panel)) return false;
+            return panel.root != null && panel.root.activeSelf && (panel.group == null || panel.group.alpha > 0.5f);
         }
     }
 }
