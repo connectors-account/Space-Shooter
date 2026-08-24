@@ -1,91 +1,78 @@
 using System;
 using System.Collections;
 using UnityEngine;
-using SpaceShooter.Bullets;
 using SpaceShooter.Core;
+using SpaceShooter.Utilities;
+using SpaceShooter.UI;
 
 namespace SpaceShooter.Player
 {
     /// <summary>
-    /// Player health with invincibility frames, shield power-up support, and damage flash.
-    /// Implements IDamageable so enemy bullets and collisions can damage it.
+    /// Manages player health, invincibility frames, shield, damage, healing, death and respawn.
     /// </summary>
-    [RequireComponent(typeof(SpriteRenderer))]
-    public class PlayerHealth : MonoBehaviour, IDamageable
+    public class PlayerHealth : MonoBehaviour
     {
         [Header("Health")]
-        [SerializeField] private int maxHealth = 100;
-        [SerializeField] private int currentHealth;
+        [SerializeField] private int maxHealth = Constants.PlayerMaxHealth;
 
         [Header("Invincibility")]
-        [SerializeField] private float invincibilityDuration = 2f;
+        [SerializeField] private float invincibilityDuration = Constants.InvincibilityDuration;
         [SerializeField] private float flashInterval = 0.1f;
 
-        [Header("Damage Flash")]
-        [SerializeField] private Color flashColor = Color.red;
-        [SerializeField] private float flashDuration = 0.15f;
+        [Header("Effects")]
+        [SerializeField] private GameObject explosionPrefab;
+        [SerializeField] private GameObject shieldVisual;
 
-        private SpriteRenderer _sprite;
-        private Color _originalColor;
+        [Header("Respawn")]
+        [SerializeField] private Vector3 respawnPosition = new Vector3(0f, -3.5f, 0f);
+
+        private int _currentHealth;
         private bool _isInvincible;
-        private bool _hasShield;
-        private bool _isDead;
+        private bool _shieldActive;
+        private SpriteRenderer _spriteRenderer;
+        private Coroutine _shieldRoutine;
 
-        public int MaxHealth => maxHealth;
-        public int CurrentHealth => currentHealth;
-        public bool HasShield => _hasShield;
-        public bool IsInvincible => _isInvincible;
-
-        // Events
-        public event Action<int, int> OnHealthChanged; // (current, max)
+        public event Action<int, int> OnHealthChanged;
         public event Action OnDeath;
-        public event Action OnShieldActivated;
-        public event Action OnShieldBroken;
+
+        public int CurrentHealth => _currentHealth;
+        public int MaxHealth => maxHealth;
+        public bool IsInvincible => _isInvincible;
+        public bool ShieldActive => _shieldActive;
 
         private void Awake()
         {
-            _sprite = GetComponent<SpriteRenderer>();
-            _originalColor = _sprite.color;
-        }
-
-        private void OnEnable()
-        {
-            ResetHealth();
-        }
-
-        public void ResetHealth()
-        {
-            currentHealth = maxHealth;
-            _isDead = false;
-            _isInvincible = false;
-            _hasShield = false;
-            if (_sprite != null)
+            _spriteRenderer = GetComponentInChildren<SpriteRenderer>();
+            if (shieldVisual != null)
             {
-                _sprite.color = _originalColor;
+                shieldVisual.SetActive(false);
             }
-            OnHealthChanged?.Invoke(currentHealth, maxHealth);
+        }
+
+        private void Start()
+        {
+            _currentHealth = maxHealth;
+            OnHealthChanged?.Invoke(_currentHealth, maxHealth);
+            UpdateHud();
         }
 
         public void TakeDamage(int amount)
         {
-            if (_isDead || _isInvincible || amount <= 0) return;
-
-            // Shield absorbs one hit entirely.
-            if (_hasShield)
+            if (amount <= 0 || _isInvincible || _shieldActive)
             {
-                _hasShield = false;
-                OnShieldBroken?.Invoke();
-                StartCoroutine(InvincibilityRoutine());
                 return;
             }
 
-            currentHealth = Mathf.Max(0, currentHealth - amount);
-            OnHealthChanged?.Invoke(currentHealth, maxHealth);
+            _currentHealth = Mathf.Max(0, _currentHealth - amount);
+            OnHealthChanged?.Invoke(_currentHealth, maxHealth);
+            UpdateHud();
 
-            AudioManager.Instance?.PlaySFX("hit");
-            StartCoroutine(DamageFlashRoutine());
+            if (AudioManager.HasInstance)
+            {
+                AudioManager.Instance.PlaySFX(AudioManager.Instance.playerHitSFX);
+            }
 
-            if (currentHealth <= 0)
+            if (_currentHealth <= 0)
             {
                 Die();
             }
@@ -97,84 +84,126 @@ namespace SpaceShooter.Player
 
         public void Heal(int amount)
         {
-            if (_isDead || amount <= 0) return;
-            currentHealth = Mathf.Min(maxHealth, currentHealth + amount);
-            OnHealthChanged?.Invoke(currentHealth, maxHealth);
-        }
-
-        public void ActivateShield()
-        {
-            _hasShield = true;
-            OnShieldActivated?.Invoke();
-        }
-
-        private IEnumerator DamageFlashRoutine()
-        {
-            if (_sprite == null) yield break;
-            _sprite.color = flashColor;
-            yield return new WaitForSeconds(flashDuration);
-            if (!_isInvincible)
+            if (amount <= 0 || _currentHealth <= 0)
             {
-                _sprite.color = _originalColor;
+                return;
             }
+
+            _currentHealth = Mathf.Min(maxHealth, _currentHealth + amount);
+            OnHealthChanged?.Invoke(_currentHealth, maxHealth);
+            UpdateHud();
+        }
+
+        /// <summary>
+        /// Activates an invulnerable shield for the given duration.
+        /// </summary>
+        public void ActivateShield(float duration)
+        {
+            if (_shieldRoutine != null)
+            {
+                StopCoroutine(_shieldRoutine);
+            }
+            _shieldRoutine = StartCoroutine(ShieldRoutine(duration));
+        }
+
+        private IEnumerator ShieldRoutine(float duration)
+        {
+            _shieldActive = true;
+            if (shieldVisual != null)
+            {
+                shieldVisual.SetActive(true);
+            }
+
+            yield return new WaitForSeconds(duration);
+
+            _shieldActive = false;
+            if (shieldVisual != null)
+            {
+                shieldVisual.SetActive(false);
+            }
+            _shieldRoutine = null;
         }
 
         private IEnumerator InvincibilityRoutine()
         {
             _isInvincible = true;
-            float timer = 0f;
-            bool visible = true;
+            float elapsed = 0f;
+            bool visible = false;
 
-            while (timer < invincibilityDuration)
+            while (elapsed < invincibilityDuration)
             {
-                visible = !visible;
-                if (_sprite != null)
+                if (_spriteRenderer != null)
                 {
-                    Color c = _originalColor;
-                    c.a = visible ? 1f : 0.35f;
-                    _sprite.color = c;
+                    visible = !visible;
+                    SetSpriteAlpha(visible ? 0.35f : 1f);
                 }
+                elapsed += flashInterval;
                 yield return new WaitForSeconds(flashInterval);
-                timer += flashInterval;
             }
 
-            _isInvincible = false;
-            if (_sprite != null)
+            if (_spriteRenderer != null)
             {
-                _sprite.color = _originalColor;
+                SetSpriteAlpha(1f);
             }
+            _isInvincible = false;
+        }
+
+        private void SetSpriteAlpha(float alpha)
+        {
+            Color c = _spriteRenderer.color;
+            c.a = alpha;
+            _spriteRenderer.color = c;
         }
 
         private void Die()
         {
-            if (_isDead) return;
-            _isDead = true;
+            if (explosionPrefab != null)
+            {
+                Instantiate(explosionPrefab, transform.position, Quaternion.identity);
+            }
+
+            if (AudioManager.HasInstance)
+            {
+                AudioManager.Instance.PlaySFX(AudioManager.Instance.explosionSFX);
+            }
+
             OnDeath?.Invoke();
 
-            AudioManager.Instance?.PlaySFX("explosion");
-
-            if (GameManager.Instance != null)
+            if (GameManager.HasInstance)
             {
                 GameManager.Instance.LoseLife();
+
                 if (GameManager.Instance.Lives > 0)
                 {
-                    // Respawn with fresh health if lives remain.
-                    ResetHealth();
-                    StartCoroutine(InvincibilityRoutine());
+                    Respawn();
                 }
                 else
                 {
+                    // GameManager.LoseLife already triggers GameOver; just hide the ship.
                     gameObject.SetActive(false);
                 }
             }
+            else
+            {
+                gameObject.SetActive(false);
+            }
         }
 
-        private void OnTriggerEnter2D(Collider2D other)
+        private void Respawn()
         {
-            // Direct collision with an enemy body also damages the player.
-            if (other.CompareTag("Enemy") || other.CompareTag("Boss"))
+            _currentHealth = maxHealth;
+            transform.position = respawnPosition;
+            OnHealthChanged?.Invoke(_currentHealth, maxHealth);
+            UpdateHud();
+            ActivateShield(2f);
+            StartCoroutine(InvincibilityRoutine());
+        }
+
+        private void UpdateHud()
+        {
+            if (UIManager.HasInstance)
             {
-                TakeDamage(25);
+                UIManager.Instance.UpdateHealth(_currentHealth, maxHealth);
             }
         }
     }

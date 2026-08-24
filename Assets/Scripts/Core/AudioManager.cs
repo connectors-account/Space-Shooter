@@ -1,242 +1,140 @@
-using System;
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
+using SpaceShooter.Utilities;
 
 namespace SpaceShooter.Core
 {
-    [Serializable]
-    public class SoundClip
-    {
-        public string name;
-        public AudioClip clip;
-        [Range(0f, 1f)] public float volume = 1f;
-        [Range(0.1f, 3f)] public float pitch = 1f;
-    }
-
     /// <summary>
-    /// Singleton audio manager. Plays SFX by name using a pool of AudioSources,
-    /// and manages background music with a smooth crossfade. Volumes persist to PlayerPrefs.
-    /// Supported SFX/music names: shoot, explosion, powerup, hit, boss_music, menu_music, game_music.
+    /// Handles all audio playback: a looping music source and a one-shot SFX source.
+    /// Volumes are persisted to PlayerPrefs.
     /// </summary>
-    public class AudioManager : MonoBehaviour
+    public class AudioManager : Singleton<AudioManager>
     {
-        public static AudioManager Instance { get; private set; }
+        [Header("Audio Sources")]
+        [SerializeField] private AudioSource musicSource;
+        [SerializeField] private AudioSource sfxSource;
 
-        private const string MasterKey = "vol_master";
-        private const string SfxKey = "vol_sfx";
-        private const string MusicKey = "vol_music";
+        [Header("SFX Clips")]
+        public AudioClip shootSFX;
+        public AudioClip explosionSFX;
+        public AudioClip powerUpSFX;
+        public AudioClip playerHitSFX;
+        public AudioClip bossAlertSFX;
 
-        [Header("Sound Library")]
-        [SerializeField] private List<SoundClip> sfxClips = new List<SoundClip>();
-        [SerializeField] private List<SoundClip> musicClips = new List<SoundClip>();
+        [Header("Music Clips")]
+        public AudioClip menuMusicClip;
+        public AudioClip gameMusicClip;
+        public AudioClip gameOverMusicClip;
 
-        [Header("Settings")]
-        [SerializeField] private int sfxSourceCount = 8;
-        [SerializeField] private float crossfadeDuration = 1.5f;
+        [Header("Default Volumes")]
+        [Range(0f, 1f)] [SerializeField] private float defaultMusicVolume = 0.6f;
+        [Range(0f, 1f)] [SerializeField] private float defaultSFXVolume = 0.8f;
 
-        private readonly Dictionary<string, SoundClip> _sfxLookup = new Dictionary<string, SoundClip>();
-        private readonly Dictionary<string, SoundClip> _musicLookup = new Dictionary<string, SoundClip>();
+        private float _musicVolume;
+        private float _sfxVolume;
 
-        private AudioSource[] _sfxSources;
-        private AudioSource _musicSourceA;
-        private AudioSource _musicSourceB;
-        private bool _usingSourceA = true;
-        private Coroutine _crossfadeRoutine;
-
-        private float _masterVolume = 1f;
-        private float _sfxVolume = 1f;
-        private float _musicVolume = 0.6f;
-
-        public float MasterVolume => _masterVolume;
-        public float SfxVolume => _sfxVolume;
         public float MusicVolume => _musicVolume;
+        public float SFXVolume => _sfxVolume;
 
-        public event Action OnVolumeChanged;
-
-        private void Awake()
+        protected override void OnAwakeInitialize()
         {
-            if (Instance != null && Instance != this)
+            // Create audio sources automatically if not assigned in the inspector.
+            if (musicSource == null)
             {
-                Destroy(gameObject);
-                return;
+                musicSource = gameObject.AddComponent<AudioSource>();
             }
-            Instance = this;
-            DontDestroyOnLoad(gameObject);
+            if (sfxSource == null)
+            {
+                sfxSource = gameObject.AddComponent<AudioSource>();
+            }
 
-            BuildLookups();
-            CreateSources();
-            LoadVolumes();
+            musicSource.loop = true;
+            musicSource.playOnAwake = false;
+            sfxSource.loop = false;
+            sfxSource.playOnAwake = false;
+
+            _musicVolume = PlayerPrefs.GetFloat(Constants.PrefKeys.MusicVolume, defaultMusicVolume);
+            _sfxVolume = PlayerPrefs.GetFloat(Constants.PrefKeys.SFXVolume, defaultSFXVolume);
+
+            musicSource.volume = _musicVolume;
+            sfxSource.volume = _sfxVolume;
         }
 
-        private void BuildLookups()
+        /// <summary>
+        /// Plays a one-shot sound effect at the current SFX volume.
+        /// </summary>
+        public void PlaySFX(AudioClip clip)
         {
-            _sfxLookup.Clear();
-            foreach (SoundClip s in sfxClips)
-            {
-                if (s != null && !string.IsNullOrEmpty(s.name))
-                {
-                    _sfxLookup[s.name] = s;
-                }
-            }
-            _musicLookup.Clear();
-            foreach (SoundClip m in musicClips)
-            {
-                if (m != null && !string.IsNullOrEmpty(m.name))
-                {
-                    _musicLookup[m.name] = m;
-                }
-            }
-        }
-
-        private void CreateSources()
-        {
-            _sfxSources = new AudioSource[Mathf.Max(1, sfxSourceCount)];
-            for (int i = 0; i < _sfxSources.Length; i++)
-            {
-                var src = gameObject.AddComponent<AudioSource>();
-                src.playOnAwake = false;
-                src.loop = false;
-                _sfxSources[i] = src;
-            }
-
-            _musicSourceA = gameObject.AddComponent<AudioSource>();
-            _musicSourceB = gameObject.AddComponent<AudioSource>();
-            foreach (var m in new[] { _musicSourceA, _musicSourceB })
-            {
-                m.playOnAwake = false;
-                m.loop = true;
-                m.volume = 0f;
-            }
-        }
-
-        private void LoadVolumes()
-        {
-            _masterVolume = PlayerPrefs.GetFloat(MasterKey, 1f);
-            _sfxVolume = PlayerPrefs.GetFloat(SfxKey, 1f);
-            _musicVolume = PlayerPrefs.GetFloat(MusicKey, 0.6f);
-            ApplyMusicVolume();
-        }
-
-        /// <summary>Plays a one-shot sound effect by name using a free pooled AudioSource.</summary>
-        public void PlaySFX(string clipName)
-        {
-            if (!_sfxLookup.TryGetValue(clipName, out SoundClip sound) || sound.clip == null)
+            if (clip == null || sfxSource == null)
             {
                 return;
             }
 
-            AudioSource source = GetFreeSfxSource();
-            source.clip = sound.clip;
-            source.volume = sound.volume * _sfxVolume * _masterVolume;
-            source.pitch = sound.pitch;
-            source.Play();
+            sfxSource.PlayOneShot(clip, _sfxVolume);
         }
 
-        private AudioSource GetFreeSfxSource()
+        /// <summary>
+        /// Plays a sound effect with a per-call volume scale.
+        /// </summary>
+        public void PlaySFX(AudioClip clip, float volumeScale)
         {
-            foreach (AudioSource s in _sfxSources)
-            {
-                if (!s.isPlaying)
-                {
-                    return s;
-                }
-            }
-            // All busy: reuse the first (steal oldest).
-            return _sfxSources[0];
-        }
-
-        /// <summary>Crossfades the background music to a new named track.</summary>
-        public void PlayMusic(string musicName)
-        {
-            if (!_musicLookup.TryGetValue(musicName, out SoundClip music) || music.clip == null)
+            if (clip == null || sfxSource == null)
             {
                 return;
             }
 
-            AudioSource target = _usingSourceA ? _musicSourceB : _musicSourceA;
-            AudioSource current = _usingSourceA ? _musicSourceA : _musicSourceB;
-
-            if (current.isPlaying && current.clip == music.clip)
-            {
-                return; // Already playing this track.
-            }
-
-            target.clip = music.clip;
-            target.volume = 0f;
-            target.Play();
-
-            if (_crossfadeRoutine != null)
-            {
-                StopCoroutine(_crossfadeRoutine);
-            }
-            _crossfadeRoutine = StartCoroutine(Crossfade(current, target, music.volume));
-            _usingSourceA = !_usingSourceA;
+            sfxSource.PlayOneShot(clip, Mathf.Clamp01(_sfxVolume * volumeScale));
         }
 
-        private IEnumerator Crossfade(AudioSource from, AudioSource to, float targetTrackVolume)
+        /// <summary>
+        /// Starts looping the given music clip. Ignores if the same clip is already playing.
+        /// </summary>
+        public void PlayMusic(AudioClip clip)
         {
-            float t = 0f;
-            float startFrom = from.volume;
-            float targetVol = targetTrackVolume * _musicVolume * _masterVolume;
-            float duration = Mathf.Max(0.01f, crossfadeDuration);
-
-            while (t < duration)
+            if (clip == null || musicSource == null)
             {
-                t += Time.unscaledDeltaTime;
-                float k = t / duration;
-                from.volume = Mathf.Lerp(startFrom, 0f, k);
-                to.volume = Mathf.Lerp(0f, targetVol, k);
-                yield return null;
+                return;
             }
 
-            from.volume = 0f;
-            from.Stop();
-            to.volume = targetVol;
-            _crossfadeRoutine = null;
+            if (musicSource.clip == clip && musicSource.isPlaying)
+            {
+                return;
+            }
+
+            musicSource.clip = clip;
+            musicSource.volume = _musicVolume;
+            musicSource.loop = true;
+            musicSource.Play();
         }
 
         public void StopMusic()
         {
-            _musicSourceA.Stop();
-            _musicSourceB.Stop();
-        }
-
-        private void ApplyMusicVolume()
-        {
-            AudioSource active = _usingSourceA ? _musicSourceA : _musicSourceB;
-            if (active != null && active.clip != null)
+            if (musicSource != null)
             {
-                // Music clips store per-clip volume implicitly via last crossfade; use full scaling.
-                active.volume = _musicVolume * _masterVolume;
+                musicSource.Stop();
             }
         }
 
-        public void SetMasterVolume(float value)
+        public void SetMusicVolume(float volume)
         {
-            _masterVolume = Mathf.Clamp01(value);
-            PlayerPrefs.SetFloat(MasterKey, _masterVolume);
-            ApplyMusicVolume();
-            OnVolumeChanged?.Invoke();
+            _musicVolume = Mathf.Clamp01(volume);
+            if (musicSource != null)
+            {
+                musicSource.volume = _musicVolume;
+            }
+
+            PlayerPrefs.SetFloat(Constants.PrefKeys.MusicVolume, _musicVolume);
+            PlayerPrefs.Save();
         }
 
-        public void SetSfxVolume(float value)
+        public void SetSFXVolume(float volume)
         {
-            _sfxVolume = Mathf.Clamp01(value);
-            PlayerPrefs.SetFloat(SfxKey, _sfxVolume);
-            OnVolumeChanged?.Invoke();
-        }
+            _sfxVolume = Mathf.Clamp01(volume);
+            if (sfxSource != null)
+            {
+                sfxSource.volume = _sfxVolume;
+            }
 
-        public void SetMusicVolume(float value)
-        {
-            _musicVolume = Mathf.Clamp01(value);
-            PlayerPrefs.SetFloat(MusicKey, _musicVolume);
-            ApplyMusicVolume();
-            OnVolumeChanged?.Invoke();
-        }
-
-        private void OnDisable()
-        {
+            PlayerPrefs.SetFloat(Constants.PrefKeys.SFXVolume, _sfxVolume);
             PlayerPrefs.Save();
         }
     }

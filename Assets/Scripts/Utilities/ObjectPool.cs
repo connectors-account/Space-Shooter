@@ -4,76 +4,111 @@ using UnityEngine;
 namespace SpaceShooter.Utilities
 {
     /// <summary>
-    /// Generic reusable object pool for MonoBehaviour components.
-    /// Expands on demand when no inactive object is available.
+    /// Generic object pool for any MonoBehaviour prefab.
+    /// Pooled objects are parented under a container transform and toggled active/inactive.
+    /// The pool auto-expands when empty.
     /// </summary>
-    /// <typeparam name="T">Component type held by the pooled prefab.</typeparam>
-    public class ObjectPool<T> where T : Component
+    public class ObjectPool<T> where T : MonoBehaviour
     {
         private readonly T _prefab;
         private readonly Transform _parent;
-        private readonly Queue<T> _inactive = new Queue<T>();
-        private readonly List<T> _all = new List<T>();
+        private readonly Queue<T> _available = new Queue<T>();
+        private readonly HashSet<T> _inUse = new HashSet<T>();
 
-        public int CountInactive => _inactive.Count;
-        public int CountTotal => _all.Count;
+        public int CountAvailable => _available.Count;
+        public int CountInUse => _inUse.Count;
+        public int CountTotal => CountAvailable + CountInUse;
 
-        public ObjectPool(T prefab, int initialSize, Transform parent = null)
+        public ObjectPool(T prefab, Transform parent, int initialSize)
         {
+            if (prefab == null)
+            {
+                Debug.LogError("ObjectPool created with a null prefab.");
+            }
+
             _prefab = prefab;
             _parent = parent;
-            Prewarm(initialSize);
-        }
 
-        private void Prewarm(int size)
-        {
-            for (int i = 0; i < size; i++)
+            for (int i = 0; i < Mathf.Max(0, initialSize); i++)
             {
-                T obj = CreateNew();
-                obj.gameObject.SetActive(false);
-                _inactive.Enqueue(obj);
+                CreateNewInstance();
             }
         }
 
-        private T CreateNew()
+        private T CreateNewInstance()
         {
-            T obj = Object.Instantiate(_prefab, _parent);
-            _all.Add(obj);
-            return obj;
+            T instance = Object.Instantiate(_prefab, _parent);
+            instance.gameObject.SetActive(false);
+            _available.Enqueue(instance);
+            return instance;
         }
 
-        /// <summary>Retrieves an object from the pool, expanding if necessary.</summary>
+        /// <summary>
+        /// Retrieves an inactive object from the pool (expanding if necessary),
+        /// activates it and returns it.
+        /// </summary>
         public T Get()
         {
-            T obj = _inactive.Count > 0 ? _inactive.Dequeue() : CreateNew();
-            obj.gameObject.SetActive(true);
-            return obj;
+            if (_available.Count == 0)
+            {
+                CreateNewInstance();
+            }
+
+            T instance = _available.Dequeue();
+
+            // Guard against destroyed objects (e.g. scene reload).
+            if (instance == null)
+            {
+                instance = Object.Instantiate(_prefab, _parent);
+            }
+
+            instance.gameObject.SetActive(true);
+            _inUse.Add(instance);
+            return instance;
         }
 
+        /// <summary>
+        /// Retrieves an object and positions it in one step.
+        /// </summary>
         public T Get(Vector3 position, Quaternion rotation)
         {
-            T obj = Get();
-            obj.transform.SetPositionAndRotation(position, rotation);
-            return obj;
+            T instance = Get();
+            instance.transform.SetPositionAndRotation(position, rotation);
+            return instance;
         }
 
-        /// <summary>Returns an object to the pool for reuse.</summary>
+        /// <summary>
+        /// Deactivates the object and returns it to the pool for reuse.
+        /// </summary>
         public void Return(T obj)
         {
-            if (obj == null) return;
+            if (obj == null)
+            {
+                return;
+            }
+
+            if (_inUse.Contains(obj))
+            {
+                _inUse.Remove(obj);
+            }
+
             obj.gameObject.SetActive(false);
-            _inactive.Enqueue(obj);
+
+            if (!_available.Contains(obj))
+            {
+                _available.Enqueue(obj);
+            }
         }
 
-        /// <summary>Deactivates and returns all currently active objects.</summary>
+        /// <summary>
+        /// Returns every currently active object to the pool.
+        /// </summary>
         public void ReturnAll()
         {
-            foreach (T obj in _all)
+            var copy = new List<T>(_inUse);
+            foreach (var obj in copy)
             {
-                if (obj != null && obj.gameObject.activeSelf)
-                {
-                    Return(obj);
-                }
+                Return(obj);
             }
         }
     }
