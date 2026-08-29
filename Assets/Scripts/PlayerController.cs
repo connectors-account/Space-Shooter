@@ -1,172 +1,211 @@
 using UnityEngine;
 
-/// <summary>
-/// Controls the player ship movement, shooting, and health management.
-/// </summary>
-public class PlayerController : MonoBehaviour
+namespace SpaceShooter
 {
-    [Header("Movement Settings")]
-    [SerializeField] private float moveSpeed = 8f;
-    [SerializeField] private float horizontalBoundary = 8f;
-    [SerializeField] private float verticalBoundaryTop = 4f;
-    [SerializeField] private float verticalBoundaryBottom = -4f;
-
-    [Header("Shooting Settings")]
-    [SerializeField] private GameObject bulletPrefab;
-    [SerializeField] private Transform firePoint;
-    [SerializeField] private float fireRate = 0.25f;
-
-    [Header("Health Settings")]
-    [SerializeField] private int maxHealth = 3;
-
-    private int currentHealth;
-    private float nextFireTime = 0f;
-    private bool canControl = true;
-
-    public int CurrentHealth => currentHealth;
-    public int MaxHealth => maxHealth;
-
-    private void Start()
+    /// <summary>
+    /// Player movement, shooting, health, and power-up effects.
+    /// Input: WASD/Arrow Keys move, Space shoots.
+    /// </summary>
+    [RequireComponent(typeof(Collider2D))]
+    public class PlayerController : MonoBehaviour, IDamageable
     {
-        currentHealth = maxHealth;
-        UpdateHealthUI();
-    }
+        [Header("Movement")]
+        [SerializeField] private float moveSpeed = 8f;
+        [SerializeField] private Vector2 minBounds = new Vector2(-8.5f, -4.6f);
+        [SerializeField] private Vector2 maxBounds = new Vector2(8.5f, 4.6f);
 
-    private void Update()
-    {
-        if (!canControl || GameManager.Instance == null || GameManager.Instance.IsGameOver)
-            return;
+        [Header("Combat")]
+        [SerializeField] private GameObject playerBulletPrefab;
+        [SerializeField] private Transform firePoint;
+        [SerializeField] private float baseFireInterval = 0.18f;
+        [SerializeField] private float upgradedFireInterval = 0.1f;
+        [SerializeField] private float bulletSpeed = 14f;
+        [SerializeField] private int bulletDamage = 1;
 
-        HandleMovement();
-        HandleShooting();
-    }
+        [Header("Health")]
+        [SerializeField] private int maxHealth = 5;
 
-    private void HandleMovement()
-    {
-        float horizontalInput = Input.GetAxis("Horizontal");
-        float verticalInput = Input.GetAxis("Vertical");
+        [Header("Power-Ups")]
+        [SerializeField] private GameObject shieldVisual;
+        [SerializeField] private float shieldDuration = 6f;
+        [SerializeField] private float weaponUpgradeDuration = 8f;
 
-        // WASD and Arrow keys are both mapped to Horizontal/Vertical by default in Unity
-        Vector3 movement = new Vector3(horizontalInput, verticalInput, 0f) * moveSpeed * Time.deltaTime;
-        transform.Translate(movement, Space.World);
+        private int currentHealth;
+        private int weaponLevel = 1;
+        private float nextFireTime;
+        private float shieldEndTime;
+        private float weaponUpgradeEndTime;
+        private bool isAlive = true;
 
-        // Clamp position to screen boundaries
-        float clampedX = Mathf.Clamp(transform.position.x, -horizontalBoundary, horizontalBoundary);
-        float clampedY = Mathf.Clamp(transform.position.y, verticalBoundaryBottom, verticalBoundaryTop);
-        transform.position = new Vector3(clampedX, clampedY, transform.position.z);
-    }
+        public DamageTeam Team => DamageTeam.Player;
+        public bool IsAlive => isAlive;
+        public int CurrentHealth => currentHealth;
+        public int MaxHealth => maxHealth;
+        public int WeaponLevel => weaponLevel;
 
-    private void HandleShooting()
-    {
-        if (Input.GetKey(KeyCode.Space) && Time.time >= nextFireTime)
+        private void Start()
         {
-            Shoot();
-            nextFireTime = Time.time + fireRate;
-        }
-    }
-
-    private void Shoot()
-    {
-        if (bulletPrefab == null)
-        {
-            Debug.LogWarning("Bullet prefab not assigned to PlayerController!");
-            return;
+            currentHealth = maxHealth;
+            ToggleShieldVisual(false);
+            UIManager.Instance?.UpdateHealth(currentHealth, maxHealth);
+            UIManager.Instance?.UpdateWeaponLevel(weaponLevel);
         }
 
-        Vector3 spawnPosition = firePoint != null ? firePoint.position : transform.position + Vector3.up * 0.5f;
-        GameObject bullet = Instantiate(bulletPrefab, spawnPosition, Quaternion.identity);
-        
-        BulletController bulletController = bullet.GetComponent<BulletController>();
-        if (bulletController != null)
+        private void Update()
         {
-            bulletController.Initialize(true, Vector3.up);
-        }
-    }
-
-    public void TakeDamage(int damage)
-    {
-        currentHealth -= damage;
-        currentHealth = Mathf.Max(currentHealth, 0);
-        
-        UpdateHealthUI();
-
-        if (currentHealth <= 0)
-        {
-            Die();
-        }
-    }
-
-    private void UpdateHealthUI()
-    {
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.UpdateHealth(currentHealth, maxHealth);
-        }
-    }
-
-    private void Die()
-    {
-        canControl = false;
-        
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.GameOver();
-        }
-
-        // Visual feedback - disable renderer instead of destroying
-        SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null)
-        {
-            spriteRenderer.enabled = false;
-        }
-
-        // Disable collider
-        Collider2D col = GetComponent<Collider2D>();
-        if (col != null)
-        {
-            col.enabled = false;
-        }
-    }
-
-    private void OnTriggerEnter2D(Collider2D other)
-    {
-        // Handle collision with enemy
-        if (other.CompareTag("Enemy"))
-        {
-            TakeDamage(1);
-            
-            EnemyController enemy = other.GetComponent<EnemyController>();
-            if (enemy != null)
+            if (!isAlive || GameManager.Instance == null || !GameManager.Instance.IsGameplayActive)
             {
-                enemy.TakeDamage(enemy.MaxHealth); // Destroy enemy on collision
+                return;
+            }
+
+            HandleMovement();
+            HandleShooting();
+            UpdateTimedPowerUps();
+        }
+
+        private void HandleMovement()
+        {
+            float horizontal = Input.GetAxisRaw("Horizontal");
+            float vertical = Input.GetAxisRaw("Vertical");
+
+            Vector3 movement = new Vector3(horizontal, vertical, 0f).normalized * moveSpeed * Time.deltaTime;
+            transform.position += movement;
+
+            transform.position = new Vector3(
+                Mathf.Clamp(transform.position.x, minBounds.x, maxBounds.x),
+                Mathf.Clamp(transform.position.y, minBounds.y, maxBounds.y),
+                transform.position.z);
+        }
+
+        private void HandleShooting()
+        {
+            if (!Input.GetKey(KeyCode.Space) || Time.time < nextFireTime || playerBulletPrefab == null)
+            {
+                return;
+            }
+
+            float interval = Time.time < weaponUpgradeEndTime ? upgradedFireInterval : baseFireInterval;
+            nextFireTime = Time.time + interval;
+
+            FirePattern();
+            AudioManager.Instance?.PlaySfx(AudioManager.SfxType.PlayerShoot);
+        }
+
+        private void FirePattern()
+        {
+            Vector3 origin = firePoint != null ? firePoint.position : transform.position + Vector3.up * 0.55f;
+
+            SpawnBullet(origin, Vector2.up);
+
+            if (weaponLevel >= 2)
+            {
+                SpawnBullet(origin + Vector3.left * 0.22f, (Vector2.up + Vector2.left * 0.08f).normalized);
+                SpawnBullet(origin + Vector3.right * 0.22f, (Vector2.up + Vector2.right * 0.08f).normalized);
+            }
+
+            if (weaponLevel >= 3)
+            {
+                SpawnBullet(origin + Vector3.left * 0.4f, (Vector2.up + Vector2.left * 0.18f).normalized);
+                SpawnBullet(origin + Vector3.right * 0.4f, (Vector2.up + Vector2.right * 0.18f).normalized);
             }
         }
-        // Handle collision with enemy bullet
-        else if (other.CompareTag("EnemyBullet"))
-        {
-            TakeDamage(1);
-            Destroy(other.gameObject);
-        }
-    }
 
-    public void ResetPlayer()
-    {
-        currentHealth = maxHealth;
-        canControl = true;
-        transform.position = new Vector3(0f, -3f, 0f);
-        
-        SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null)
+        private void SpawnBullet(Vector3 position, Vector2 direction)
         {
-            spriteRenderer.enabled = true;
+            GameObject bullet = Instantiate(playerBulletPrefab, position, Quaternion.identity);
+            BulletController bulletController = bullet.GetComponent<BulletController>();
+            if (bulletController != null)
+            {
+                bulletController.Initialize(DamageTeam.Player, direction, bulletDamage, bulletSpeed);
+            }
         }
 
-        Collider2D col = GetComponent<Collider2D>();
-        if (col != null)
+        public void TakeDamage(int amount, DamageTeam sourceTeam)
         {
-            col.enabled = true;
+            if (!isAlive)
+            {
+                return;
+            }
+
+            if (IsShieldActive())
+            {
+                return;
+            }
+
+            currentHealth = Mathf.Max(0, currentHealth - Mathf.Max(1, amount));
+            UIManager.Instance?.UpdateHealth(currentHealth, maxHealth);
+            AudioManager.Instance?.PlaySfx(AudioManager.SfxType.PlayerHit);
+
+            if (currentHealth <= 0)
+            {
+                Die();
+            }
         }
 
-        UpdateHealthUI();
+        private void Die()
+        {
+            isAlive = false;
+            gameObject.SetActive(false);
+            AudioManager.Instance?.PlaySfx(AudioManager.SfxType.Explosion);
+            GameManager.Instance?.HandlePlayerDefeated();
+        }
+
+        public void ApplyPowerUp(PowerUpController.PowerUpType powerUpType, int amount, float duration)
+        {
+            if (!isAlive)
+            {
+                return;
+            }
+
+            switch (powerUpType)
+            {
+                case PowerUpController.PowerUpType.WeaponUpgrade:
+                    weaponLevel = Mathf.Clamp(weaponLevel + amount, 1, 3);
+                    weaponUpgradeEndTime = Time.time + Mathf.Max(duration, weaponUpgradeDuration);
+                    UIManager.Instance?.UpdateWeaponLevel(weaponLevel);
+                    break;
+
+                case PowerUpController.PowerUpType.Shield:
+                    shieldEndTime = Time.time + Mathf.Max(duration, shieldDuration);
+                    ToggleShieldVisual(true);
+                    UIManager.Instance?.SetShieldActive(true);
+                    break;
+
+                case PowerUpController.PowerUpType.Health:
+                    currentHealth = Mathf.Clamp(currentHealth + amount, 0, maxHealth);
+                    UIManager.Instance?.UpdateHealth(currentHealth, maxHealth);
+                    break;
+            }
+
+            AudioManager.Instance?.PlaySfx(AudioManager.SfxType.PowerUp);
+        }
+
+        private void UpdateTimedPowerUps()
+        {
+            if (weaponLevel > 1 && Time.time >= weaponUpgradeEndTime)
+            {
+                weaponLevel = 1;
+                UIManager.Instance?.UpdateWeaponLevel(weaponLevel);
+            }
+
+            if (IsShieldActive() && Time.time >= shieldEndTime)
+            {
+                ToggleShieldVisual(false);
+                UIManager.Instance?.SetShieldActive(false);
+            }
+        }
+
+        private bool IsShieldActive()
+        {
+            return Time.time < shieldEndTime;
+        }
+
+        private void ToggleShieldVisual(bool state)
+        {
+            if (shieldVisual != null)
+            {
+                shieldVisual.SetActive(state);
+            }
+        }
     }
 }
