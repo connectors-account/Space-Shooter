@@ -1,172 +1,101 @@
 using UnityEngine;
 
 /// <summary>
-/// Controls the player ship movement, shooting, and health management.
+/// Handles player ship movement, shooting, and hit-flash invincibility.
+/// Attach to the Player GameObject. Requires a Rigidbody2D and a PolygonCollider2D
+/// tagged "Player".
 /// </summary>
+[RequireComponent(typeof(SpriteRenderer))]
 public class PlayerController : MonoBehaviour
 {
-    [Header("Movement Settings")]
-    [SerializeField] private float moveSpeed = 8f;
-    [SerializeField] private float horizontalBoundary = 8f;
-    [SerializeField] private float verticalBoundaryTop = 4f;
-    [SerializeField] private float verticalBoundaryBottom = -4f;
+    // ── Inspector ──────────────────────────────────────────────────────────────
+    [Header("Movement")]
+    public float moveSpeed = 6f;
+    public float xMin      = -8.5f;
+    public float xMax      =  8.5f;
+    public float yMin      = -4.8f;
+    public float yMax      =  4.8f;
 
-    [Header("Shooting Settings")]
-    [SerializeField] private GameObject bulletPrefab;
-    [SerializeField] private Transform firePoint;
-    [SerializeField] private float fireRate = 0.25f;
+    [Header("Shooting")]
+    public GameObject bulletPrefab;
+    public Transform  firePoint;
+    public float      fireRate = 0.18f;   // seconds between shots
 
-    [Header("Health Settings")]
-    [SerializeField] private int maxHealth = 3;
+    [Header("Invincibility after hit")]
+    public float invincibleDuration = 1.5f;
 
-    private int currentHealth;
-    private float nextFireTime = 0f;
-    private bool canControl = true;
+    // ── Private ────────────────────────────────────────────────────────────────
+    SpriteRenderer sr;
+    float nextFireTime;
+    float invincibleTimer;
+    bool  isInvincible;
 
-    public int CurrentHealth => currentHealth;
-    public int MaxHealth => maxHealth;
+    // ── Unity ──────────────────────────────────────────────────────────────────
+    void Awake() => sr = GetComponent<SpriteRenderer>();
 
-    private void Start()
+    void Update()
     {
-        currentHealth = maxHealth;
-        UpdateHealthUI();
+        if (GameManager.Instance == null || GameManager.Instance.IsGameOver) return;
+
+        Move();
+        Shoot();
+        TickInvincibility();
     }
 
-    private void Update()
+    // ── Movement ───────────────────────────────────────────────────────────────
+    void Move()
     {
-        if (!canControl || GameManager.Instance == null || GameManager.Instance.IsGameOver)
-            return;
+        float h = Input.GetAxis("Horizontal");
+        float v = Input.GetAxis("Vertical");
 
-        HandleMovement();
-        HandleShooting();
+        Vector3 p = transform.position;
+        p.x = Mathf.Clamp(p.x + h * moveSpeed * Time.deltaTime, xMin, xMax);
+        p.y = Mathf.Clamp(p.y + v * moveSpeed * Time.deltaTime, yMin, yMax);
+        transform.position = p;
     }
 
-    private void HandleMovement()
-    {
-        float horizontalInput = Input.GetAxis("Horizontal");
-        float verticalInput = Input.GetAxis("Vertical");
-
-        // WASD and Arrow keys are both mapped to Horizontal/Vertical by default in Unity
-        Vector3 movement = new Vector3(horizontalInput, verticalInput, 0f) * moveSpeed * Time.deltaTime;
-        transform.Translate(movement, Space.World);
-
-        // Clamp position to screen boundaries
-        float clampedX = Mathf.Clamp(transform.position.x, -horizontalBoundary, horizontalBoundary);
-        float clampedY = Mathf.Clamp(transform.position.y, verticalBoundaryBottom, verticalBoundaryTop);
-        transform.position = new Vector3(clampedX, clampedY, transform.position.z);
-    }
-
-    private void HandleShooting()
+    // ── Shooting ───────────────────────────────────────────────────────────────
+    void Shoot()
     {
         if (Input.GetKey(KeyCode.Space) && Time.time >= nextFireTime)
         {
-            Shoot();
+            Instantiate(bulletPrefab, firePoint.position, Quaternion.identity);
             nextFireTime = Time.time + fireRate;
         }
     }
 
-    private void Shoot()
+    // ── Invincibility flash ────────────────────────────────────────────────────
+    void TickInvincibility()
     {
-        if (bulletPrefab == null)
-        {
-            Debug.LogWarning("Bullet prefab not assigned to PlayerController!");
-            return;
-        }
+        if (!isInvincible) return;
 
-        Vector3 spawnPosition = firePoint != null ? firePoint.position : transform.position + Vector3.up * 0.5f;
-        GameObject bullet = Instantiate(bulletPrefab, spawnPosition, Quaternion.identity);
-        
-        BulletController bulletController = bullet.GetComponent<BulletController>();
-        if (bulletController != null)
+        invincibleTimer -= Time.deltaTime;
+        // Rapid flicker: visible when sine is positive
+        sr.enabled = Mathf.Sin(invincibleTimer * 25f) >= 0f;
+
+        if (invincibleTimer <= 0f)
         {
-            bulletController.Initialize(true, Vector3.up);
+            isInvincible = false;
+            sr.enabled   = true;
         }
     }
 
-    public void TakeDamage(int damage)
+    void BeginInvincibility()
     {
-        currentHealth -= damage;
-        currentHealth = Mathf.Max(currentHealth, 0);
-        
-        UpdateHealthUI();
-
-        if (currentHealth <= 0)
-        {
-            Die();
-        }
+        isInvincible    = true;
+        invincibleTimer = invincibleDuration;
     }
 
-    private void UpdateHealthUI()
+    // ── Collision ──────────────────────────────────────────────────────────────
+    void OnTriggerEnter2D(Collider2D other)
     {
-        if (UIManager.Instance != null)
-        {
-            UIManager.Instance.UpdateHealth(currentHealth, maxHealth);
-        }
-    }
+        if (isInvincible) return;
 
-    private void Die()
-    {
-        canControl = false;
-        
-        if (GameManager.Instance != null)
+        if (other.CompareTag("EnemyBullet") || other.CompareTag("Enemy"))
         {
-            GameManager.Instance.GameOver();
-        }
-
-        // Visual feedback - disable renderer instead of destroying
-        SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null)
-        {
-            spriteRenderer.enabled = false;
-        }
-
-        // Disable collider
-        Collider2D col = GetComponent<Collider2D>();
-        if (col != null)
-        {
-            col.enabled = false;
-        }
-    }
-
-    private void OnTriggerEnter2D(Collider2D other)
-    {
-        // Handle collision with enemy
-        if (other.CompareTag("Enemy"))
-        {
-            TakeDamage(1);
-            
-            EnemyController enemy = other.GetComponent<EnemyController>();
-            if (enemy != null)
-            {
-                enemy.TakeDamage(enemy.MaxHealth); // Destroy enemy on collision
-            }
-        }
-        // Handle collision with enemy bullet
-        else if (other.CompareTag("EnemyBullet"))
-        {
-            TakeDamage(1);
+            GameManager.Instance.TakeDamage(1);
             Destroy(other.gameObject);
+            BeginInvincibility();
         }
-    }
-
-    public void ResetPlayer()
-    {
-        currentHealth = maxHealth;
-        canControl = true;
-        transform.position = new Vector3(0f, -3f, 0f);
-        
-        SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null)
-        {
-            spriteRenderer.enabled = true;
-        }
-
-        Collider2D col = GetComponent<Collider2D>();
-        if (col != null)
-        {
-            col.enabled = true;
-        }
-
-        UpdateHealthUI();
     }
 }
