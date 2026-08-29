@@ -1,20 +1,20 @@
 using System.Collections;
 using UnityEngine;
 using SpaceShooter.Utilities;
-using SpaceShooter.Enemy;
+using SpaceShooter.Player;
 
 namespace SpaceShooter.Bullets
 {
     /// <summary>
-    /// Player bullet. Travels along its local up axis, damages enemies on contact
-    /// and returns itself to the pool on hit or after a lifetime timeout.
+    /// Enemy bullet. Travels along its local up axis (which is pointed downward / toward
+    /// the player when fired), damages the player on contact and returns to the pool.
     /// </summary>
     [RequireComponent(typeof(Rigidbody2D))]
     [RequireComponent(typeof(Collider2D))]
-    public class Bullet : MonoBehaviour
+    public class EnemyBullet : MonoBehaviour
     {
-        [SerializeField] private float speed = Constants.PlayerBulletSpeed;
-        [SerializeField] private int damage = Constants.PlayerBulletDamage;
+        [SerializeField] private float speed = Constants.EnemyBulletSpeed;
+        [SerializeField] private int damage = Constants.EnemyBulletDamage;
         [SerializeField] private float lifetime = Constants.BulletLifetime;
 
         private Coroutine _lifetimeRoutine;
@@ -43,6 +43,7 @@ namespace SpaceShooter.Bullets
 
         private void Update()
         {
+            // Enemy bullets are spawned rotated 180° so their "up" faces down.
             transform.position += transform.up * (speed * Time.deltaTime);
         }
 
@@ -54,17 +55,17 @@ namespace SpaceShooter.Bullets
 
         private void OnTriggerEnter2D(Collider2D other)
         {
-            if (other.CompareTag(Constants.Tags.Enemy) || other.CompareTag(Constants.Tags.Boss))
+            if (other.CompareTag(Constants.Tags.Player))
             {
-                var enemyHealth = other.GetComponent<EnemyHealth>();
-                if (enemyHealth == null)
+                var playerHealth = other.GetComponent<PlayerHealth>();
+                if (playerHealth == null)
                 {
-                    enemyHealth = other.GetComponentInParent<EnemyHealth>();
+                    playerHealth = other.GetComponentInParent<PlayerHealth>();
                 }
 
-                if (enemyHealth != null)
+                if (playerHealth != null)
                 {
-                    enemyHealth.TakeDamage(damage);
+                    playerHealth.TakeDamage(damage);
                 }
 
                 ReturnToPool();
@@ -75,7 +76,7 @@ namespace SpaceShooter.Bullets
         {
             if (BulletPool.HasInstance)
             {
-                BulletPool.Instance.ReturnPlayerBullet(this);
+                BulletPool.Instance.ReturnEnemyBullet(this);
             }
             else
             {

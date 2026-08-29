@@ -1,181 +1,212 @@
 using System.Collections;
 using UnityEngine;
-using SpaceShooter.Bullets;
 using SpaceShooter.Core;
+using SpaceShooter.UI;
 using SpaceShooter.Utilities;
 
 namespace SpaceShooter.Enemy
 {
     /// <summary>
-    /// Boss enemy with a dramatic entrance and two combat phases.
-    /// Phase 1 (>50% HP): Spread5 pattern, slow horizontal patrol.
-    /// Phase 2 (&lt;=50% HP): Spiral pattern, faster patrol, periodic minion spawning.
-    /// 500 HP.
+    /// Multi-phase boss. Enters from the top, stops at a hold position, then attacks.
+    /// Three phases scale movement speed and firing based on remaining health percentage.
     /// </summary>
     public class BossEnemy : EnemyBase
     {
-        [Header("Boss Config")]
-        [SerializeField] private float entranceDuration = 2.5f;
-        [SerializeField] private float patrolSpeedPhase1 = 2f;
-        [SerializeField] private float patrolSpeedPhase2 = 4f;
-        [SerializeField] private float targetYRatio = 0.65f; // fraction of top half to settle at
+        [Header("Entry")]
+        [SerializeField] private float entrySpeed = 3f;
+        [SerializeField] private float holdY = 3f;
 
-        [Header("Attack")]
-        [SerializeField] private float fireIntervalPhase1 = 1.6f;
-        [SerializeField] private float fireIntervalPhase2 = 0.15f;
-        [SerializeField] private float bulletSpeed = 6.5f;
-        [SerializeField] private int bulletDamage = 12;
-        [SerializeField] private float spiralStep = 22f;
+        [Header("Sideways Movement")]
+        [SerializeField] private float sideSpeedPhase1 = 1.5f;
+        [SerializeField] private float sideSpeedPhase2 = 3f;
+        [SerializeField] private float sideSpeedPhase3 = 5f;
+        [SerializeField] private float sideRange = 3.5f;
 
-        [Header("Minions")]
-        [SerializeField] private float minionSpawnInterval = 4f;
-        [SerializeField] private EnemyType minionType = EnemyType.Fast;
+        [Header("Side Cannons")]
+        [SerializeField] private EnemyShooter[] sideCannons;
 
-        private bool _entered;
-        private bool _phase2;
-        private int _patrolDir = 1;
-        private float _fireTimer;
-        private float _spiralAngle;
-        private float _minionTimer;
-        private float _settleY;
+        private int _currentPhase;
+        private bool _active;
+        private float _centerX;
+        private float _sideSpeed;
 
-        protected override void Awake()
+        public override void InitializeEnemy()
         {
-            base.Awake();
-            maxHealth = 500;
-            scoreValue = 5000;
-        }
+            ApplyCommonData();
 
-        protected override void OnEnable()
-        {
-            base.OnEnable();
-            _entered = false;
-            _phase2 = false;
-            _patrolDir = 1;
-            _fireTimer = fireIntervalPhase1;
-            _minionTimer = minionSpawnInterval;
-            _spiralAngle = 0f;
-            StartCoroutine(EntranceRoutine());
-        }
-
-        private IEnumerator EntranceRoutine()
-        {
-            float topY = ScreenBounds.Instance != null ? ScreenBounds.Instance.MaxY : 5f;
-            _settleY = ScreenBounds.Instance != null
-                ? Mathf.Lerp(0f, ScreenBounds.Instance.MaxY, targetYRatio)
-                : 3f;
-
-            Vector3 start = new Vector3(0f, topY + 2f, 0f);
-            Vector3 end = new Vector3(0f, _settleY, 0f);
-            transform.position = start;
-
-            float t = 0f;
-            while (t < entranceDuration)
+            // Disable the mover; the boss handles its own movement.
+            if (mover != null)
             {
-                t += Time.deltaTime;
-                float k = Mathf.SmoothStep(0f, 1f, t / entranceDuration);
-                transform.position = Vector3.Lerp(start, end, k);
+                mover.enabled = false;
+            }
+
+            _centerX = transform.position.x;
+            _currentPhase = 0;
+            _active = false;
+
+            if (AudioManager.HasInstance)
+            {
+                AudioManager.Instance.PlaySFX(AudioManager.Instance.bossAlertSFX);
+            }
+
+            if (health != null)
+            {
+                health.OnHealthChanged += HandleHealthChanged;
+            }
+
+            if (UIManager.HasInstance)
+            {
+                UIManager.Instance.ShowBossHealthBar(1f);
+            }
+
+            StartCoroutine(EntryRoutine());
+        }
+
+        private IEnumerator EntryRoutine()
+        {
+            // Fly in from the top until reaching the hold position.
+            while (transform.position.y > holdY)
+            {
+                transform.position += Vector3.down * (entrySpeed * Time.deltaTime);
                 yield return null;
             }
 
-            transform.position = end;
-            _entered = true;
+            Vector3 pos = transform.position;
+            pos.y = holdY;
+            transform.position = pos;
 
-            AudioManager.Instance?.PlaySFX("boss_music");
-        }
-
-        protected override void OnDamaged()
-        {
-            base.OnDamaged();
-            if (!_phase2 && currentHealth <= maxHealth * 0.5f)
-            {
-                EnterPhase2();
-            }
-        }
-
-        private void EnterPhase2()
-        {
-            _phase2 = true;
-            _fireTimer = fireIntervalPhase2;
-            if (spriteRenderer != null)
-            {
-                // Shift tint to signal enrage.
-                spriteRenderer.color = Color.Lerp(originalColor, Color.red, 0.4f);
-                originalColor = spriteRenderer.color;
-            }
+            _active = true;
+            EnterPhase(1);
         }
 
         private void Update()
         {
-            if (!_entered || isDead) return;
-            if (GameManager.Instance != null && GameManager.Instance.State != GameState.Playing) return;
-
-            Patrol();
-            HandleFiring();
-
-            if (_phase2)
+            if (!_active)
             {
-                HandleMinions();
+                return;
             }
-        }
 
-        private void Patrol()
-        {
-            float speed = _phase2 ? patrolSpeedPhase2 : patrolSpeedPhase1;
+            if (GameManager.HasInstance && GameManager.Instance.State != GameState.Playing)
+            {
+                return;
+            }
+
+            // Oscillate horizontally around the centre.
+            float x = _centerX + Mathf.Sin(Time.time * _sideSpeed) * sideRange;
             Vector3 pos = transform.position;
-            pos.x += _patrolDir * speed * Time.deltaTime;
-
-            if (ScreenBounds.Instance != null)
-            {
-                float limit = ScreenBounds.Instance.MaxX - 2f;
-                if (pos.x >= limit)
-                {
-                    pos.x = limit;
-                    _patrolDir = -1;
-                }
-                else if (pos.x <= -limit)
-                {
-                    pos.x = -limit;
-                    _patrolDir = 1;
-                }
-            }
+            pos.x = x;
             transform.position = pos;
         }
 
-        private void HandleFiring()
+        private void HandleHealthChanged(int current, int max)
         {
-            _fireTimer -= Time.deltaTime;
-            if (_fireTimer > 0f) return;
+            float percent = max > 0 ? (float)current / max : 0f;
 
-            Vector3 origin = transform.position + Vector3.down * 1f;
-            var playerObj = GameObject.FindGameObjectWithTag("Player");
-            Vector3 target = playerObj != null ? playerObj.transform.position : origin + Vector3.down * 5f;
-
-            if (!_phase2)
+            if (UIManager.HasInstance)
             {
-                BulletPattern.Fire(PatternType.Spread5, origin, Vector2.down, target, bulletSpeed, bulletDamage);
-                _fireTimer = fireIntervalPhase1;
+                UIManager.Instance.ShowBossHealthBar(percent);
+            }
+
+            if (percent > 0.66f)
+            {
+                EnterPhase(1);
+            }
+            else if (percent > 0.33f)
+            {
+                EnterPhase(2);
             }
             else
             {
-                BulletPattern.Fire(PatternType.Spiral, origin, Vector2.down, target, bulletSpeed, bulletDamage, _spiralAngle);
-                _spiralAngle += spiralStep;
-                if (_spiralAngle >= 360f) _spiralAngle -= 360f;
-                _fireTimer = fireIntervalPhase2;
+                EnterPhase(3);
             }
         }
 
-        private void HandleMinions()
+        private void EnterPhase(int phase)
         {
-            _minionTimer -= Time.deltaTime;
-            if (_minionTimer > 0f) return;
-
-            _minionTimer = minionSpawnInterval;
-            var spawner = FindObjectOfType<EnemySpawner>();
-            if (spawner != null)
+            if (phase == _currentPhase || !_active)
             {
-                spawner.SpawnEnemy(minionType, 1.2f);
+                return;
             }
+            _currentPhase = phase;
+
+            switch (phase)
+            {
+                case 1:
+                    _sideSpeed = sideSpeedPhase1;
+                    if (shooter != null) shooter.BeginFiring(BulletPattern.Single, 1.2f, DamageOrDefault());
+                    SetSideCannons(false, BulletPattern.Single, 1.5f);
+                    break;
+
+                case 2:
+                    _sideSpeed = sideSpeedPhase2;
+                    if (shooter != null) shooter.BeginFiring(BulletPattern.Spread3, 0.9f, DamageOrDefault());
+                    SetSideCannons(true, BulletPattern.Single, 1.0f);
+                    break;
+
+                case 3:
+                    _sideSpeed = sideSpeedPhase3;
+                    if (shooter != null) shooter.BeginFiring(BulletPattern.Spread5, 0.45f, DamageOrDefault());
+                    SetSideCannons(true, BulletPattern.Aimed, 0.7f);
+                    break;
+            }
+        }
+
+        private int DamageOrDefault()
+        {
+            return data != null ? data.bulletDamage : Constants.EnemyBulletDamage;
+        }
+
+        private void SetSideCannons(bool active, BulletPattern pattern, float interval)
+        {
+            if (sideCannons == null)
+            {
+                return;
+            }
+
+            foreach (var cannon in sideCannons)
+            {
+                if (cannon == null)
+                {
+                    continue;
+                }
+                cannon.gameObject.SetActive(active);
+                if (active)
+                {
+                    cannon.BeginFiring(pattern, interval, DamageOrDefault());
+                }
+                else
+                {
+                    cannon.StopFiring();
+                }
+            }
+        }
+
+        public override void OnDeath()
+        {
+            _active = false;
+
+            if (health != null)
+            {
+                health.OnHealthChanged -= HandleHealthChanged;
+            }
+
+            if (shooter != null)
+            {
+                shooter.StopFiring();
+            }
+            SetSideCannons(false, BulletPattern.Single, 1f);
+
+            if (UIManager.HasInstance)
+            {
+                UIManager.Instance.HideBossHealthBar();
+            }
+
+            base.OnDeath();
+        }
+
+        protected override void Awake()
+        {
+            base.Awake();
         }
     }
 }

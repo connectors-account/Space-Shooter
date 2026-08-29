@@ -1,43 +1,41 @@
 using System.Collections;
 using UnityEngine;
-using UnityEngine.InputSystem;
 using SpaceShooter.Bullets;
 using SpaceShooter.Core;
+using SpaceShooter.Utilities;
+
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 
 namespace SpaceShooter.Player
 {
-    public enum ShootMode
-    {
-        Single,
-        Triple,
-        Rapid
-    }
-
     /// <summary>
-    /// Handles player firing: auto-fire on hold, multiple shoot modes, bullet pooling,
-    /// and a muzzle flash effect. Base fire rate 0.2s.
+    /// Handles player shooting with four upgradeable weapon levels and a muzzle flash effect.
+    /// Level 1: single | Level 2: double | Level 3: triple spread | Level 4: quad + side cannons.
     /// </summary>
     public class PlayerShooter : MonoBehaviour
     {
         [Header("Firing")]
-        [SerializeField] private float baseFireRate = 0.2f;
-        [SerializeField] private float bulletSpeed = 14f;
-        [SerializeField] private int bulletDamage = 10;
+        [SerializeField] private float fireRate = Constants.PlayerFireRate;
         [SerializeField] private Transform firePoint;
-        [SerializeField] private float tripleSpreadAngle = 12f;
+        [SerializeField] private float bulletSpeed = Constants.PlayerBulletSpeed;
+        [SerializeField] private int bulletDamage = Constants.PlayerBulletDamage;
+
+        [Header("Weapon Level")]
+        [SerializeField] private int weaponLevel = Constants.MinWeaponLevel;
+
+        [Header("Spread")]
+        [SerializeField] private float spreadAngle = 12f;
+        [SerializeField] private float sideOffset = 0.35f;
 
         [Header("Muzzle Flash")]
-        [SerializeField] private SpriteRenderer muzzleFlash;
-        [SerializeField] private float muzzleFlashTime = 0.05f;
+        [SerializeField] private GameObject muzzleFlash;
+        [SerializeField] private float muzzleFlashDuration = 0.05f;
 
-        private ShootMode _mode = ShootMode.Single;
-        private float _fireRateMultiplier = 1f;
-        private float _cooldown;
-        private bool _fireHeld;
+        private float _nextFireTime;
 
-        private PlayerInputActions _inputActions;
-
-        public ShootMode Mode => _mode;
+        public int WeaponLevel => weaponLevel;
 
         private void Awake()
         {
@@ -47,113 +45,120 @@ namespace SpaceShooter.Player
             }
             if (muzzleFlash != null)
             {
-                muzzleFlash.enabled = false;
+                muzzleFlash.SetActive(false);
             }
-            _inputActions = new PlayerInputActions();
-        }
-
-        private void OnEnable()
-        {
-            _inputActions.Enable();
-            _inputActions.Gameplay.Fire.performed += OnFirePerformed;
-            _inputActions.Gameplay.Fire.canceled += OnFireCanceled;
-        }
-
-        private void OnDisable()
-        {
-            _inputActions.Gameplay.Fire.performed -= OnFirePerformed;
-            _inputActions.Gameplay.Fire.canceled -= OnFireCanceled;
-            _inputActions.Disable();
-        }
-
-        private void OnFirePerformed(InputAction.CallbackContext ctx) => _fireHeld = true;
-        private void OnFireCanceled(InputAction.CallbackContext ctx) => _fireHeld = false;
-
-        public void SetMode(ShootMode mode) => _mode = mode;
-        public void ResetMode() => _mode = ShootMode.Single;
-
-        public void SetFireRateMultiplier(float multiplier)
-        {
-            _fireRateMultiplier = Mathf.Max(0.05f, multiplier);
         }
 
         private void Update()
         {
-            if (GameManager.Instance != null && GameManager.Instance.State != GameState.Playing)
+            if (GameManager.HasInstance && GameManager.Instance.State != GameState.Playing)
             {
                 return;
             }
 
-            _cooldown -= Time.deltaTime;
-
-            if (_fireHeld && _cooldown <= 0f)
+            if (IsFirePressed() && Time.time >= _nextFireTime)
             {
+                _nextFireTime = Time.time + fireRate;
                 Fire();
-                _cooldown = CurrentFireRate();
             }
         }
 
-        private float CurrentFireRate()
+        private bool IsFirePressed()
         {
-            // Rapid mode fires roughly twice as fast; power-up multiplier reduces interval.
-            float rate = baseFireRate * _fireRateMultiplier;
-            if (_mode == ShootMode.Rapid)
-            {
-                rate *= 0.5f;
-            }
-            return Mathf.Max(0.03f, rate);
+#if ENABLE_INPUT_SYSTEM
+            Keyboard keyboard = Keyboard.current;
+            bool keyPressed = keyboard != null && (keyboard.spaceKey.isPressed || keyboard.leftCtrlKey.isPressed);
+            Gamepad gamepad = Gamepad.current;
+            bool padPressed = gamepad != null && gamepad.buttonSouth.isPressed;
+            return keyPressed || padPressed;
+#else
+            return Input.GetButton("Fire1") || Input.GetKey(KeyCode.Space);
+#endif
         }
 
         private void Fire()
         {
-            if (BulletPool.Instance == null) return;
-
-            Vector3 origin = firePoint.position;
-
-            switch (_mode)
+            switch (weaponLevel)
             {
-                case ShootMode.Single:
-                case ShootMode.Rapid:
-                    SpawnBullet(origin, Vector2.up);
+                case 1:
+                    SpawnBullet(firePoint.position, 0f);
                     break;
 
-                case ShootMode.Triple:
-                    SpawnBullet(origin, Vector2.up);
-                    SpawnBullet(origin, RotateVector(Vector2.up, tripleSpreadAngle));
-                    SpawnBullet(origin, RotateVector(Vector2.up, -tripleSpreadAngle));
+                case 2:
+                    SpawnBullet(firePoint.position + firePoint.right * -sideOffset, 0f);
+                    SpawnBullet(firePoint.position + firePoint.right * sideOffset, 0f);
+                    break;
+
+                case 3:
+                    SpawnBullet(firePoint.position, 0f);
+                    SpawnBullet(firePoint.position, -spreadAngle);
+                    SpawnBullet(firePoint.position, spreadAngle);
+                    break;
+
+                default: // Level 4+
+                    SpawnBullet(firePoint.position + firePoint.right * -sideOffset, -spreadAngle);
+                    SpawnBullet(firePoint.position + firePoint.right * -sideOffset * 0.5f, 0f);
+                    SpawnBullet(firePoint.position + firePoint.right * sideOffset * 0.5f, 0f);
+                    SpawnBullet(firePoint.position + firePoint.right * sideOffset, spreadAngle);
+                    // Side cannons firing straight up.
+                    SpawnBullet(firePoint.position + firePoint.right * -sideOffset * 2f, 0f);
+                    SpawnBullet(firePoint.position + firePoint.right * sideOffset * 2f, 0f);
                     break;
             }
 
-            AudioManager.Instance?.PlaySFX("shoot");
-            if (muzzleFlash != null)
+            if (AudioManager.HasInstance)
             {
-                StartCoroutine(MuzzleFlashRoutine());
+                AudioManager.Instance.PlaySFX(AudioManager.Instance.shootSFX, 0.6f);
+            }
+
+            ShowMuzzleFlash();
+        }
+
+        private void SpawnBullet(Vector3 position, float angleDegrees)
+        {
+            if (!BulletPool.HasInstance)
+            {
+                return;
+            }
+
+            Quaternion rotation = Quaternion.Euler(0f, 0f, angleDegrees);
+            Bullet bullet = BulletPool.Instance.GetPlayerBullet(position, rotation);
+            if (bullet != null)
+            {
+                bullet.Configure(bulletDamage, bulletSpeed);
             }
         }
 
-        private void SpawnBullet(Vector3 origin, Vector2 direction)
+        private void ShowMuzzleFlash()
         {
-            BulletPool.Instance.GetPlayerBullet(origin, direction, bulletSpeed, bulletDamage);
-        }
-
-        private static Vector2 RotateVector(Vector2 v, float degrees)
-        {
-            float rad = degrees * Mathf.Deg2Rad;
-            float cos = Mathf.Cos(rad);
-            float sin = Mathf.Sin(rad);
-            return new Vector2(v.x * cos - v.y * sin, v.x * sin + v.y * cos);
+            if (muzzleFlash == null)
+            {
+                return;
+            }
+            StopCoroutine(nameof(MuzzleFlashRoutine));
+            StartCoroutine(MuzzleFlashRoutine());
         }
 
         private IEnumerator MuzzleFlashRoutine()
         {
-            muzzleFlash.enabled = true;
-            yield return new WaitForSeconds(muzzleFlashTime);
-            muzzleFlash.enabled = false;
+            muzzleFlash.SetActive(true);
+            yield return new WaitForSeconds(muzzleFlashDuration);
+            muzzleFlash.SetActive(false);
         }
 
-        private void OnDestroy()
+        public void UpgradeWeapon()
         {
-            _inputActions?.Dispose();
+            weaponLevel = Mathf.Min(Constants.MaxWeaponLevel, weaponLevel + 1);
+        }
+
+        public void DowngradeWeapon()
+        {
+            weaponLevel = Mathf.Max(Constants.MinWeaponLevel, weaponLevel - 1);
+        }
+
+        public void ResetWeapon()
+        {
+            weaponLevel = Constants.MinWeaponLevel;
         }
     }
 }

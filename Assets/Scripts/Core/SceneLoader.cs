@@ -2,103 +2,149 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using SpaceShooter.Utilities;
 
 namespace SpaceShooter.Core
 {
     /// <summary>
-    /// Handles asynchronous scene loading with an optional loading screen overlay.
-    /// Persists across scenes as a singleton.
+    /// Wraps UnityEngine.SceneManagement with convenience methods and an optional
+    /// async load with a fade-in/out loading screen.
     /// </summary>
-    public class SceneLoader : MonoBehaviour
+    public class SceneLoader : Singleton<SceneLoader>
     {
-        public static SceneLoader Instance { get; private set; }
-
-        public const string MainMenuScene = "MainMenu";
-        public const string GameScene = "GameScene";
-
         [Header("Loading Screen (optional)")]
-        [SerializeField] private CanvasGroup loadingCanvas;
+        [SerializeField] private CanvasGroup loadingScreen;
         [SerializeField] private Slider progressBar;
+        [SerializeField] private float fadeDuration = 0.35f;
 
         private bool _isLoading;
 
-        private void Awake()
+        protected override void OnAwakeInitialize()
         {
-            if (Instance != null && Instance != this)
+            if (loadingScreen != null)
             {
-                Destroy(gameObject);
+                loadingScreen.alpha = 0f;
+                loadingScreen.gameObject.SetActive(false);
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // Convenience wrappers
+        // ------------------------------------------------------------------
+        public void LoadMainMenu(bool async = true) => LoadScene(Constants.Scenes.MainMenu, async);
+        public void LoadGameScene(bool async = true) => LoadScene(Constants.Scenes.Game, async);
+        public void LoadGameOver(bool async = true) => LoadScene(Constants.Scenes.GameOver, async);
+
+        /// <summary>
+        /// Loads a scene either synchronously or asynchronously with an optional loading fade.
+        /// </summary>
+        public void LoadScene(string sceneName, bool async = true)
+        {
+            if (_isLoading)
+            {
                 return;
             }
-            Instance = this;
-            DontDestroyOnLoad(gameObject);
 
-            if (loadingCanvas != null)
+            // Always reset the timescale so the next scene runs normally.
+            Time.timeScale = 1f;
+
+            if (async && loadingScreen != null)
             {
-                loadingCanvas.gameObject.SetActive(false);
+                StartCoroutine(LoadSceneAsyncRoutine(sceneName));
+            }
+            else if (async)
+            {
+                StartCoroutine(LoadSceneAsyncSimple(sceneName));
+            }
+            else
+            {
+                SceneManager.LoadScene(sceneName);
             }
         }
 
-        public void LoadMainMenu()
+        public void ReloadCurrentScene()
         {
-            LoadScene(MainMenuScene);
+            LoadScene(SceneManager.GetActiveScene().name);
         }
 
-        public void LoadGameScene()
+        public void QuitGame()
         {
-            LoadScene(GameScene);
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPlaying = false;
+#else
+            Application.Quit();
+#endif
         }
 
-        public void LoadScene(string sceneName)
+        // ------------------------------------------------------------------
+        // Async routines
+        // ------------------------------------------------------------------
+        private IEnumerator LoadSceneAsyncSimple(string sceneName)
         {
-            if (_isLoading) return;
-            Time.timeScale = 1f;
-            StartCoroutine(LoadSceneAsync(sceneName));
+            _isLoading = true;
+            AsyncOperation op = SceneManager.LoadSceneAsync(sceneName);
+            while (!op.isDone)
+            {
+                yield return null;
+            }
+            _isLoading = false;
         }
 
-        private IEnumerator LoadSceneAsync(string sceneName)
+        private IEnumerator LoadSceneAsyncRoutine(string sceneName)
         {
             _isLoading = true;
 
-            if (loadingCanvas != null)
-            {
-                loadingCanvas.gameObject.SetActive(true);
-                loadingCanvas.alpha = 1f;
-            }
-            if (progressBar != null)
-            {
-                progressBar.value = 0f;
-            }
-
-            yield return null;
+            // Fade in the loading screen.
+            loadingScreen.gameObject.SetActive(true);
+            yield return StartCoroutine(Fade(0f, 1f));
 
             AsyncOperation op = SceneManager.LoadSceneAsync(sceneName);
             op.allowSceneActivation = false;
 
-            while (!op.isDone)
+            // Unity reports progress up to 0.9 before activation.
+            while (op.progress < 0.9f)
             {
-                // Unity progress caps at 0.9 until activation is allowed.
-                float progress = Mathf.Clamp01(op.progress / 0.9f);
                 if (progressBar != null)
                 {
-                    progressBar.value = progress;
-                }
-
-                if (op.progress >= 0.9f)
-                {
-                    if (progressBar != null)
-                    {
-                        progressBar.value = 1f;
-                    }
-                    op.allowSceneActivation = true;
+                    progressBar.value = Mathf.Clamp01(op.progress / 0.9f);
                 }
                 yield return null;
             }
 
-            if (loadingCanvas != null)
+            if (progressBar != null)
             {
-                loadingCanvas.gameObject.SetActive(false);
+                progressBar.value = 1f;
             }
+
+            // Small pause so the full bar is visible.
+            yield return new WaitForSecondsRealtime(0.15f);
+
+            op.allowSceneActivation = true;
+            while (!op.isDone)
+            {
+                yield return null;
+            }
+
+            // Fade out the loading screen.
+            yield return StartCoroutine(Fade(1f, 0f));
+            loadingScreen.gameObject.SetActive(false);
+
             _isLoading = false;
+        }
+
+        private IEnumerator Fade(float from, float to)
+        {
+            float elapsed = 0f;
+            loadingScreen.alpha = from;
+
+            while (elapsed < fadeDuration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                loadingScreen.alpha = Mathf.Lerp(from, to, elapsed / fadeDuration);
+                yield return null;
+            }
+
+            loadingScreen.alpha = to;
         }
     }
 }

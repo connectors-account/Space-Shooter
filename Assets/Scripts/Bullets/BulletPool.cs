@@ -4,88 +4,80 @@ using SpaceShooter.Utilities;
 namespace SpaceShooter.Bullets
 {
     /// <summary>
-    /// Singleton that maintains separate object pools for player and enemy bullets.
-    /// Default pool size is 50 each; pools expand on demand.
+    /// Singleton that owns object pools for both player and enemy bullets.
     /// </summary>
-    public class BulletPool : MonoBehaviour
+    public class BulletPool : Singleton<BulletPool>
     {
-        public static BulletPool Instance { get; private set; }
-
         [Header("Prefabs")]
         [SerializeField] private Bullet playerBulletPrefab;
-        [SerializeField] private Bullet enemyBulletPrefab;
+        [SerializeField] private EnemyBullet enemyBulletPrefab;
 
-        [Header("Pool Sizes")]
-        [SerializeField] private int playerPoolSize = 50;
-        [SerializeField] private int enemyPoolSize = 50;
+        [Header("Pool Configuration")]
+        [SerializeField] private int poolSize = 50;
 
         private ObjectPool<Bullet> _playerPool;
-        private ObjectPool<Bullet> _enemyPool;
+        private ObjectPool<EnemyBullet> _enemyPool;
 
-        private Transform _playerParent;
-        private Transform _enemyParent;
+        private Transform _playerContainer;
+        private Transform _enemyContainer;
 
-        private void Awake()
+        // This pool lives in the Game scene, not across scenes.
+        protected override bool PersistAcrossScenes => false;
+
+        protected override void OnAwakeInitialize()
         {
-            if (Instance != null && Instance != this)
-            {
-                Destroy(gameObject);
-                return;
-            }
-            Instance = this;
-
-            _playerParent = new GameObject("PlayerBullets").transform;
-            _enemyParent = new GameObject("EnemyBullets").transform;
-            _playerParent.SetParent(transform);
-            _enemyParent.SetParent(transform);
+            _playerContainer = new GameObject("PlayerBullets").transform;
+            _enemyContainer = new GameObject("EnemyBullets").transform;
+            _playerContainer.SetParent(transform);
+            _enemyContainer.SetParent(transform);
 
             if (playerBulletPrefab != null)
             {
-                _playerPool = new ObjectPool<Bullet>(playerBulletPrefab, playerPoolSize, _playerParent);
-            }
-            if (enemyBulletPrefab != null)
-            {
-                _enemyPool = new ObjectPool<Bullet>(enemyBulletPrefab, enemyPoolSize, _enemyParent);
-            }
-        }
-
-        /// <summary>Retrieves a player bullet, initializes it, and returns it active.</summary>
-        public Bullet GetPlayerBullet(Vector3 position, Vector2 direction, float speed, int damage)
-        {
-            if (_playerPool == null) return null;
-            Bullet b = _playerPool.Get(position, Quaternion.identity);
-            b.Initialize(direction, speed, damage, BulletOwner.Player);
-            return b;
-        }
-
-        /// <summary>Retrieves an enemy bullet, initializes it, and returns it active.</summary>
-        public Bullet GetEnemyBullet(Vector3 position, Vector2 direction, float speed, int damage)
-        {
-            if (_enemyPool == null) return null;
-            Bullet b = _enemyPool.Get(position, Quaternion.identity);
-            b.Initialize(direction, speed, damage, BulletOwner.Enemy);
-            return b;
-        }
-
-        /// <summary>Returns a bullet to its correct pool based on owner.</summary>
-        public void ReturnBullet(Bullet bullet)
-        {
-            if (bullet == null) return;
-            if (bullet.Owner == BulletOwner.Player)
-            {
-                _playerPool?.Return(bullet);
+                _playerPool = new ObjectPool<Bullet>(playerBulletPrefab, _playerContainer, poolSize);
             }
             else
             {
-                _enemyPool?.Return(bullet);
+                Debug.LogError("BulletPool: playerBulletPrefab is not assigned.");
+            }
+
+            if (enemyBulletPrefab != null)
+            {
+                _enemyPool = new ObjectPool<EnemyBullet>(enemyBulletPrefab, _enemyContainer, poolSize);
+            }
+            else
+            {
+                Debug.LogError("BulletPool: enemyBulletPrefab is not assigned.");
             }
         }
 
-        /// <summary>Deactivates every active bullet (used when resetting the field).</summary>
-        public void ReturnAll()
+        public Bullet GetPlayerBullet(Vector3 position, Quaternion rotation)
         {
-            _playerPool?.ReturnAll();
-            _enemyPool?.ReturnAll();
+            if (_playerPool == null)
+            {
+                return null;
+            }
+
+            return _playerPool.Get(position, rotation);
+        }
+
+        public EnemyBullet GetEnemyBullet(Vector3 position, Quaternion rotation)
+        {
+            if (_enemyPool == null)
+            {
+                return null;
+            }
+
+            return _enemyPool.Get(position, rotation);
+        }
+
+        public void ReturnPlayerBullet(Bullet bullet)
+        {
+            _playerPool?.Return(bullet);
+        }
+
+        public void ReturnEnemyBullet(EnemyBullet bullet)
+        {
+            _enemyPool?.Return(bullet);
         }
     }
 }

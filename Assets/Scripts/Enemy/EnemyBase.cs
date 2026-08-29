@@ -1,139 +1,125 @@
-using System;
 using UnityEngine;
-using SpaceShooter.Bullets;
 using SpaceShooter.Core;
+using SpaceShooter.Data;
+using SpaceShooter.Utilities;
+using SpaceShooter.Spawning;
 using SpaceShooter.PowerUps;
 
 namespace SpaceShooter.Enemy
 {
     /// <summary>
-    /// Abstract base for all enemies. Handles health, scoring, death, power-up drops,
-    /// and an explosion effect. Implements IDamageable for bullet collisions.
+    /// Abstract base for all enemies. Wires up the health/mover/shooter components,
+    /// handles death rewards (score, power-up drops, explosion) and notifies the spawner.
     /// </summary>
-    [RequireComponent(typeof(SpriteRenderer))]
-    public abstract class EnemyBase : MonoBehaviour, IDamageable
+    [RequireComponent(typeof(EnemyHealth))]
+    public abstract class EnemyBase : MonoBehaviour
     {
-        [Header("Base Stats")]
-        [SerializeField] protected int maxHealth = 30;
-        [SerializeField] protected int scoreValue = 100;
-        [SerializeField] protected float moveSpeed = 3f;
+        [Header("Data")]
+        [SerializeField] protected EnemyData data;
 
-        [Header("Drops")]
-        [Range(0f, 1f)]
-        [SerializeField] protected float powerUpDropChance = 0.2f;
-        [SerializeField] protected PowerUp[] powerUpPrefabs;
-
-        [Header("Death FX")]
-        [SerializeField] protected GameObject explosionPrefab;
-        [SerializeField] protected Color hitFlashColor = Color.white;
-
-        protected int currentHealth;
+        protected EnemyHealth health;
+        protected EnemyMover mover;
+        protected EnemyShooter shooter;
         protected SpriteRenderer spriteRenderer;
-        protected Color originalColor;
-        protected bool isDead;
 
-        public int ScoreValue => scoreValue;
-        public int CurrentHealth => currentHealth;
-        public int MaxHealth => maxHealth;
+        private bool _deathHandled;
 
-        public event Action<EnemyBase> OnEnemyDied;
+        public EnemyData Data => data;
 
         protected virtual void Awake()
         {
-            spriteRenderer = GetComponent<SpriteRenderer>();
-            if (spriteRenderer != null)
+            health = GetComponent<EnemyHealth>();
+            mover = GetComponent<EnemyMover>();
+            shooter = GetComponent<EnemyShooter>();
+            spriteRenderer = GetComponentInChildren<SpriteRenderer>();
+        }
+
+        protected virtual void Start()
+        {
+            InitializeEnemy();
+        }
+
+        /// <summary>
+        /// Assigns the data asset (called by the spawner before Start if spawned at runtime).
+        /// </summary>
+        public void SetData(EnemyData enemyData)
+        {
+            data = enemyData;
+        }
+
+        /// <summary>
+        /// Configures all sub-components from the EnemyData asset.
+        /// </summary>
+        public abstract void InitializeEnemy();
+
+        /// <summary>
+        /// Applies common visual/stat setup from the data asset. Call from InitializeEnemy.
+        /// </summary>
+        protected void ApplyCommonData()
+        {
+            if (data == null)
             {
-                originalColor = spriteRenderer.color;
+                return;
             }
-        }
 
-        protected virtual void OnEnable()
-        {
-            currentHealth = maxHealth;
-            isDead = false;
-            if (spriteRenderer != null)
+            if (spriteRenderer != null && data.sprite != null)
             {
-                spriteRenderer.color = originalColor;
+                spriteRenderer.sprite = data.sprite;
+                spriteRenderer.color = data.tint;
             }
-        }
 
-        public virtual void TakeDamage(int amount)
-        {
-            if (isDead || amount <= 0) return;
-
-            currentHealth -= amount;
-            OnDamaged();
-
-            if (currentHealth <= 0)
+            if (health != null)
             {
-                Die();
-            }
-        }
-
-        /// <summary>Hook for subclasses (e.g. hit flash, phase transitions). Default: brief flash.</summary>
-        protected virtual void OnDamaged()
-        {
-            if (spriteRenderer != null)
-            {
-                CancelInvoke(nameof(RestoreColor));
-                spriteRenderer.color = hitFlashColor;
-                Invoke(nameof(RestoreColor), 0.06f);
-            }
-        }
-
-        private void RestoreColor()
-        {
-            if (spriteRenderer != null && !isDead)
-            {
-                spriteRenderer.color = originalColor;
-            }
-        }
-
-        public virtual void Die()
-        {
-            if (isDead) return;
-            isDead = true;
-
-            GameManager.Instance?.AddScore(scoreValue);
-            AudioManager.Instance?.PlaySFX("explosion");
-
-            SpawnExplosion();
-            TryDropPowerUp();
-
-            Despawn();
-        }
-
-        protected void SpawnExplosion()
-        {
-            if (explosionPrefab != null)
-            {
-                GameObject fx = Instantiate(explosionPrefab, transform.position, Quaternion.identity);
-                Destroy(fx, 2f);
-            }
-        }
-
-        protected void TryDropPowerUp()
-        {
-            if (powerUpPrefabs == null || powerUpPrefabs.Length == 0) return;
-            if (UnityEngine.Random.value > powerUpDropChance) return;
-
-            PowerUp prefab = powerUpPrefabs[UnityEngine.Random.Range(0, powerUpPrefabs.Length)];
-            if (prefab != null)
-            {
-                Instantiate(prefab, transform.position, Quaternion.identity);
+                health.Initialize(data.health);
             }
         }
 
         /// <summary>
-        /// Deactivates the enemy (pool-friendly) and notifies listeners exactly once.
-        /// Called on death and when the enemy leaves the play area.
+        /// Called by EnemyHealth when this enemy dies.
         /// </summary>
-        public virtual void Despawn()
+        public virtual void OnDeath()
         {
-            var handler = OnEnemyDied;
-            OnEnemyDied = null;
-            handler?.Invoke(this);
-            gameObject.SetActive(false);
+            if (_deathHandled)
+            {
+                return;
+            }
+            _deathHandled = true;
+
+            // Explosion particle.
+            if (data != null && data.explosionPrefab != null)
+            {
+                Instantiate(data.explosionPrefab, transform.position, Quaternion.identity);
+            }
+
+            // Explosion SFX.
+            if (AudioManager.HasInstance)
+            {
+                AudioManager.Instance.PlaySFX(AudioManager.Instance.explosionSFX);
+            }
+
+            // Score reward + floating popup.
+            if (data != null && GameManager.HasInstance)
+            {
+                GameManager.Instance.AddScore(data.scoreValue);
+                if (SpaceShooter.UI.UIManager.HasInstance)
+                {
+                    SpaceShooter.UI.UIManager.Instance.ShowScorePopup(data.scoreValue, transform.position);
+                }
+            }
+
+            // Power-up drop chance.
+            if (data != null && data.powerUpDropChance > 0f && PowerUpSpawner.HasInstance)
+            {
+                PowerUpSpawner.Instance.TrySpawn(transform.position, data.powerUpDropChance);
+            }
+
+            // Notify the spawner so wave tracking updates.
+            if (EnemySpawner.HasInstance)
+            {
+                EnemySpawner.Instance.EnemyDestroyed(this);
+            }
+
+            Destroy(gameObject);
         }
     }
 }
