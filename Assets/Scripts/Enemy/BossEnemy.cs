@@ -1,181 +1,191 @@
 using System.Collections;
 using UnityEngine;
-using SpaceShooter.Bullets;
 using SpaceShooter.Core;
-using SpaceShooter.Utilities;
+using SpaceShooter.Bullets;
+using SpaceShooter.Pickups;
 
 namespace SpaceShooter.Enemy
 {
     /// <summary>
-    /// Boss enemy with a dramatic entrance and two combat phases.
-    /// Phase 1 (>50% HP): Spread5 pattern, slow horizontal patrol.
-    /// Phase 2 (&lt;=50% HP): Spiral pattern, faster patrol, periodic minion spawning.
-    /// 500 HP.
+    /// Two-phase boss. Phase 1: side-to-side movement, Spread(5) + Circle(12).
+    /// Phase 2 (at 50% HP): faster, adds a permanent rotating Spiral. Big death sequence.
     /// </summary>
     public class BossEnemy : EnemyBase
     {
-        [Header("Boss Config")]
-        [SerializeField] private float entranceDuration = 2.5f;
-        [SerializeField] private float patrolSpeedPhase1 = 2f;
-        [SerializeField] private float patrolSpeedPhase2 = 4f;
-        [SerializeField] private float targetYRatio = 0.65f; // fraction of top half to settle at
+        #region Fields
+        [SerializeField] private int _phase = 1;
+        private float _direction = 1f;
+        private float _currentMoveSpeed;
 
-        [Header("Attack")]
-        [SerializeField] private float fireIntervalPhase1 = 1.6f;
-        [SerializeField] private float fireIntervalPhase2 = 0.15f;
-        [SerializeField] private float bulletSpeed = 6.5f;
-        [SerializeField] private int bulletDamage = 12;
-        [SerializeField] private float spiralStep = 22f;
+        private Coroutine _spreadRoutine;
+        private Coroutine _circleRoutine;
+        private Coroutine _spiralRoutine;
+        #endregion
 
-        [Header("Minions")]
-        [SerializeField] private float minionSpawnInterval = 4f;
-        [SerializeField] private EnemyType minionType = EnemyType.Fast;
+        #region Properties
+        public int Phase => _phase;
+        #endregion
 
-        private bool _entered;
-        private bool _phase2;
-        private int _patrolDir = 1;
-        private float _fireTimer;
-        private float _spiralAngle;
-        private float _minionTimer;
-        private float _settleY;
-
+        #region Setup
         protected override void Awake()
         {
             base.Awake();
-            maxHealth = 500;
-            scoreValue = 5000;
+            _maxHealth = GameConstants.BOSS_MAX_HEALTH;
+            _scoreValue = GameConstants.BOSS_SCORE;
+            _moveSpeed = GameConstants.BOSS_MOVE_SPEED;
+            gameObject.tag = GameConstants.TAG_BOSS;
         }
 
-        protected override void OnEnable()
+        protected override void InitStats()
         {
-            base.OnEnable();
-            _entered = false;
-            _phase2 = false;
-            _patrolDir = 1;
-            _fireTimer = fireIntervalPhase1;
-            _minionTimer = minionSpawnInterval;
-            _spiralAngle = 0f;
-            StartCoroutine(EntranceRoutine());
+            _maxHealth = Mathf.CeilToInt(GameConstants.BOSS_MAX_HEALTH * _difficultyMultiplier);
+            _currentHealth = _maxHealth;
+            _scoreValue = Mathf.CeilToInt(GameConstants.BOSS_SCORE * _difficultyMultiplier);
         }
 
-        private IEnumerator EntranceRoutine()
+        protected override void Start()
         {
-            float topY = ScreenBounds.Instance != null ? ScreenBounds.Instance.MaxY : 5f;
-            _settleY = ScreenBounds.Instance != null
-                ? Mathf.Lerp(0f, ScreenBounds.Instance.MaxY, targetYRatio)
-                : 3f;
+            InitStats();
+            _phase = 1;
+            _currentMoveSpeed = _moveSpeed;
+            // Boss manages its own firing; do not use the generic EnemyShooter loop.
+            StartPhase1();
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlaySFX(AudioManager.Instance.BossRoar);
+        }
+        #endregion
 
-            Vector3 start = new Vector3(0f, topY + 2f, 0f);
-            Vector3 end = new Vector3(0f, _settleY, 0f);
-            transform.position = start;
-
-            float t = 0f;
-            while (t < entranceDuration)
+        #region Movement
+        protected override void Move()
+        {
+            // Move into position first, then patrol side-to-side.
+            if (transform.position.y > GameConstants.BOSS_Y_POSITION)
             {
-                t += Time.deltaTime;
-                float k = Mathf.SmoothStep(0f, 1f, t / entranceDuration);
-                transform.position = Vector3.Lerp(start, end, k);
-                yield return null;
+                transform.Translate(Vector3.down * _currentMoveSpeed * Time.deltaTime, Space.World);
+                return;
             }
 
-            transform.position = end;
-            _entered = true;
-
-            AudioManager.Instance?.PlaySFX("boss_music");
+            float x = transform.position.x + _direction * _currentMoveSpeed * Time.deltaTime;
+            float limit = GameConstants.CAMERA_RIGHT - 2f;
+            if (x > limit) { x = limit; _direction = -1f; }
+            else if (x < -limit) { x = -limit; _direction = 1f; }
+            transform.position = new Vector3(x, GameConstants.BOSS_Y_POSITION, 0f);
         }
+        #endregion
 
-        protected override void OnDamaged()
+        #region Phases
+        private void StartPhase1()
         {
-            base.OnDamaged();
-            if (!_phase2 && currentHealth <= maxHealth * 0.5f)
-            {
-                EnterPhase2();
-            }
+            _spreadRoutine = StartCoroutine(SpreadLoop());
+            _circleRoutine = StartCoroutine(CircleLoop());
         }
 
         private void EnterPhase2()
         {
-            _phase2 = true;
-            _fireTimer = fireIntervalPhase2;
-            if (spriteRenderer != null)
-            {
-                // Shift tint to signal enrage.
-                spriteRenderer.color = Color.Lerp(originalColor, Color.red, 0.4f);
-                originalColor = spriteRenderer.color;
-            }
+            _phase = 2;
+            _currentMoveSpeed = _moveSpeed * GameConstants.BOSS_PHASE2_SPEED_MULTIPLIER;
+            _spiralRoutine = StartCoroutine(
+                BulletPattern.Spiral(this, () => transform.position, 3, 140f, true, GameConstants.BOSS_SPIRAL_FIRE_RATE));
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlaySFX(AudioManager.Instance.BossRoar, 0.8f);
         }
 
-        private void Update()
+        private IEnumerator SpreadLoop()
         {
-            if (!_entered || isDead) return;
-            if (GameManager.Instance != null && GameManager.Instance.State != GameState.Playing) return;
-
-            Patrol();
-            HandleFiring();
-
-            if (_phase2)
+            WaitForSeconds wait = new WaitForSeconds(GameConstants.BOSS_SPREAD_FIRE_RATE);
+            while (!_isDead)
             {
-                HandleMinions();
+                BulletPattern.Spread(transform.position, 5, 70f, true);
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlaySFX(AudioManager.Instance.EnemyShoot, 0.8f, 0.5f);
+                yield return wait;
             }
         }
 
-        private void Patrol()
+        private IEnumerator CircleLoop()
         {
-            float speed = _phase2 ? patrolSpeedPhase2 : patrolSpeedPhase1;
-            Vector3 pos = transform.position;
-            pos.x += _patrolDir * speed * Time.deltaTime;
-
-            if (ScreenBounds.Instance != null)
+            WaitForSeconds wait = new WaitForSeconds(GameConstants.BOSS_CIRCLE_FIRE_RATE);
+            while (!_isDead)
             {
-                float limit = ScreenBounds.Instance.MaxX - 2f;
-                if (pos.x >= limit)
-                {
-                    pos.x = limit;
-                    _patrolDir = -1;
-                }
-                else if (pos.x <= -limit)
-                {
-                    pos.x = -limit;
-                    _patrolDir = 1;
-                }
+                yield return wait;
+                if (_isDead) break;
+                BulletPattern.Circle(transform.position, 12, true);
             }
-            transform.position = pos;
         }
+        #endregion
 
-        private void HandleFiring()
+        #region Damage & Death
+        public override void TakeDamage(int dmg)
         {
-            _fireTimer -= Time.deltaTime;
-            if (_fireTimer > 0f) return;
+            if (_isDead || dmg <= 0) return;
+            base.TakeDamage(dmg);
 
-            Vector3 origin = transform.position + Vector3.down * 1f;
-            var playerObj = GameObject.FindGameObjectWithTag("Player");
-            Vector3 target = playerObj != null ? playerObj.transform.position : origin + Vector3.down * 5f;
-
-            if (!_phase2)
-            {
-                BulletPattern.Fire(PatternType.Spread5, origin, Vector2.down, target, bulletSpeed, bulletDamage);
-                _fireTimer = fireIntervalPhase1;
-            }
-            else
-            {
-                BulletPattern.Fire(PatternType.Spiral, origin, Vector2.down, target, bulletSpeed, bulletDamage, _spiralAngle);
-                _spiralAngle += spiralStep;
-                if (_spiralAngle >= 360f) _spiralAngle -= 360f;
-                _fireTimer = fireIntervalPhase2;
-            }
+            if (_phase == 1 && _currentHealth > 0 && _currentHealth <= _maxHealth * 0.5f)
+                EnterPhase2();
         }
 
-        private void HandleMinions()
+        protected override void Die()
         {
-            _minionTimer -= Time.deltaTime;
-            if (_minionTimer > 0f) return;
+            if (_isDead) return;
+            _isDead = true;
 
-            _minionTimer = minionSpawnInterval;
-            var spawner = FindObjectOfType<EnemySpawner>();
-            if (spawner != null)
+            StopAllFiring();
+
+            if (ScoreManager.Instance != null) ScoreManager.Instance.AddScore(_scoreValue);
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlaySFX(AudioManager.Instance.BossRoar);
+
+            StartCoroutine(DeathSequence());
+        }
+
+        private void StopAllFiring()
+        {
+            if (_spreadRoutine != null) StopCoroutine(_spreadRoutine);
+            if (_circleRoutine != null) StopCoroutine(_circleRoutine);
+            if (_spiralRoutine != null) StopCoroutine(_spiralRoutine);
+        }
+
+        private IEnumerator DeathSequence()
+        {
+            // Multiple staggered explosions across the boss body.
+            for (int i = 0; i < 8; i++)
             {
-                spawner.SpawnEnemy(minionType, 1.2f);
+                Vector3 offset = new Vector3(Random.Range(-1.5f, 1.5f), Random.Range(-1f, 1f), 0f);
+                SpawnExplosionAt(transform.position + offset);
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlaySFX(AudioManager.Instance.Explosion, Random.Range(0.7f, 1.2f));
+                if (Environment.CameraShake.Instance != null)
+                    Environment.CameraShake.Instance.Shake(0.15f, 0.25f);
+                yield return new WaitForSeconds(0.15f);
+            }
+
+            // Drop three power-ups around the death location.
+            PowerUpSpawner.SpawnGuaranteed(transform.position + Vector3.left);
+            PowerUpSpawner.SpawnGuaranteed(transform.position);
+            PowerUpSpawner.SpawnGuaranteed(transform.position + Vector3.right);
+
+            if (WaveManager.Instance != null) WaveManager.Instance.BossDefeated();
+
+            Destroy(gameObject);
+        }
+
+        private void SpawnExplosionAt(Vector3 pos)
+        {
+            Sprite particle = Utilities.SpriteGenerator.GenerateStar();
+            for (int i = 0; i < 16; i++)
+            {
+                GameObject p = new GameObject("BossExplosionParticle");
+                p.transform.position = pos;
+                SpriteRenderer sr = p.AddComponent<SpriteRenderer>();
+                sr.sprite = particle;
+                sr.color = new Color(1f, Random.Range(0.3f, 0.7f), 0.1f, 1f);
+                sr.sortingOrder = 45;
+                float angle = Random.Range(0f, 360f) * Mathf.Deg2Rad;
+                Vector2 vel = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * Random.Range(2f, 6f);
+                Player.ExplosionParticle ep = p.AddComponent<Player.ExplosionParticle>();
+                ep.Launch(vel, Random.Range(0.5f, 1f));
             }
         }
+        #endregion
     }
 }

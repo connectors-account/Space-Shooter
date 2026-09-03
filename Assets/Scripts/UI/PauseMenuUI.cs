@@ -1,114 +1,88 @@
 using UnityEngine;
 using UnityEngine.UI;
-using UnityEngine.InputSystem;
 using SpaceShooter.Core;
 
 namespace SpaceShooter.UI
 {
     /// <summary>
-    /// Pause menu toggled with Escape. Offers Resume, Restart and Main Menu,
-    /// plus music and SFX volume sliders bound to the AudioManager.
+    /// Pause overlay shown when the game state is Paused. Dims the background with
+    /// a semi-transparent panel and offers Resume / Main Menu / Quit.
     /// </summary>
     public class PauseMenuUI : MonoBehaviour
     {
-        [Header("Panel")]
-        [SerializeField] private GameObject pausePanel;
+        #region Inspector Fields
+        [Header("Root")]
+        [SerializeField] private GameObject _root;
+        [SerializeField] private Image _dimPanel;
 
         [Header("Buttons")]
-        [SerializeField] private Button resumeButton;
-        [SerializeField] private Button restartButton;
-        [SerializeField] private Button mainMenuButton;
+        [SerializeField] private Button _resumeButton;
+        [SerializeField] private Button _menuButton;
+        [SerializeField] private Button _quitButton;
+        #endregion
 
-        [Header("Volume Sliders")]
-        [SerializeField] private Slider musicSlider;
-        [SerializeField] private Slider sfxSlider;
-
-        private InputAction _pauseAction;
-
-        private void Awake()
-        {
-            _pauseAction = new InputAction("Pause", InputActionType.Button, "<Keyboard>/escape");
-        }
-
+        #region Unity Lifecycle
         private void OnEnable()
         {
-            _pauseAction.Enable();
-            _pauseAction.performed += OnPausePressed;
+            GameManager.OnStateChanged += HandleStateChanged;
+            if (_resumeButton != null) _resumeButton.onClick.AddListener(OnResume);
+            if (_menuButton != null) _menuButton.onClick.AddListener(OnMenu);
+            if (_quitButton != null) _quitButton.onClick.AddListener(OnQuit);
+
+            if (_dimPanel != null) _dimPanel.color = new Color(0f, 0f, 0f, 0.6f);
+            SetVisible(false);
         }
 
         private void OnDisable()
         {
-            _pauseAction.performed -= OnPausePressed;
-            _pauseAction.Disable();
+            GameManager.OnStateChanged -= HandleStateChanged;
+            if (_resumeButton != null) _resumeButton.onClick.RemoveListener(OnResume);
+            if (_menuButton != null) _menuButton.onClick.RemoveListener(OnMenu);
+            if (_quitButton != null) _quitButton.onClick.RemoveListener(OnQuit);
+        }
+        #endregion
+
+        #region State
+        private void HandleStateChanged(GameManager.GameState state)
+        {
+            SetVisible(state == GameManager.GameState.Paused);
         }
 
-        private void Start()
+        private void SetVisible(bool visible)
         {
-            if (pausePanel != null) pausePanel.SetActive(false);
+            if (_root != null) _root.SetActive(visible);
+            else gameObject.SetActive(visible);
+        }
+        #endregion
 
-            if (resumeButton != null) resumeButton.onClick.AddListener(Resume);
-            if (restartButton != null) restartButton.onClick.AddListener(Restart);
-            if (mainMenuButton != null) mainMenuButton.onClick.AddListener(GoToMainMenu);
+        #region Button Handlers
+        private void OnResume()
+        {
+            Click();
+            if (GameManager.Instance != null) GameManager.Instance.ResumeGame();
+        }
 
+        private void OnMenu()
+        {
+            Click();
+            if (GameManager.Instance != null) GameManager.Instance.GoToMainMenu();
+        }
+
+        private void OnQuit()
+        {
+            Click();
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPlaying = false;
+#else
+            Application.Quit();
+#endif
+        }
+
+        private void Click()
+        {
             if (AudioManager.Instance != null)
-            {
-                if (musicSlider != null)
-                {
-                    musicSlider.value = AudioManager.Instance.MusicVolume;
-                    musicSlider.onValueChanged.AddListener(AudioManager.Instance.SetMusicVolume);
-                }
-                if (sfxSlider != null)
-                {
-                    sfxSlider.value = AudioManager.Instance.SfxVolume;
-                    sfxSlider.onValueChanged.AddListener(AudioManager.Instance.SetSfxVolume);
-                }
-            }
+                AudioManager.Instance.PlaySFX(AudioManager.Instance.ButtonClick);
         }
-
-        private void OnPausePressed(InputAction.CallbackContext ctx)
-        {
-            if (GameManager.Instance == null) return;
-
-            if (GameManager.Instance.State == GameState.Playing)
-            {
-                Pause();
-            }
-            else if (GameManager.Instance.State == GameState.Paused)
-            {
-                Resume();
-            }
-        }
-
-        private void Pause()
-        {
-            GameManager.Instance.PauseGame();
-            if (pausePanel != null) pausePanel.SetActive(true);
-        }
-
-        private void Resume()
-        {
-            GameManager.Instance.ResumeGame();
-            if (pausePanel != null) pausePanel.SetActive(false);
-        }
-
-        private void Restart()
-        {
-            if (pausePanel != null) pausePanel.SetActive(false);
-            Time.timeScale = 1f;
-            if (SceneLoader.Instance != null)
-            {
-                SceneLoader.Instance.LoadGameScene();
-            }
-        }
-
-        private void GoToMainMenu()
-        {
-            if (pausePanel != null) pausePanel.SetActive(false);
-            Time.timeScale = 1f;
-            if (SceneLoader.Instance != null)
-            {
-                SceneLoader.Instance.LoadMainMenu();
-            }
-        }
+        #endregion
     }
 }

@@ -1,159 +1,203 @@
 using System.Collections;
 using UnityEngine;
-using UnityEngine.InputSystem;
-using SpaceShooter.Bullets;
 using SpaceShooter.Core;
+using SpaceShooter.Bullets;
+using SpaceShooter.Enemy;
 
 namespace SpaceShooter.Player
 {
-    public enum ShootMode
-    {
-        Single,
-        Triple,
-        Rapid
-    }
+    /// <summary>Firing patterns the player ship can use.</summary>
+    public enum ShootPattern { Single, Double, Triple, Spread5, Laser }
 
     /// <summary>
-    /// Handles player firing: auto-fire on hold, multiple shoot modes, bullet pooling,
-    /// and a muzzle flash effect. Base fire rate 0.2s.
+    /// Handles the player's weapons. Fires the active pattern on demand with a
+    /// per-pattern cooldown, pulling bullets from the BulletPool. Supports a laser
+    /// mode that deals continuous raycast damage.
     /// </summary>
     public class PlayerShooter : MonoBehaviour
     {
-        [Header("Firing")]
-        [SerializeField] private float baseFireRate = 0.2f;
-        [SerializeField] private float bulletSpeed = 14f;
-        [SerializeField] private int bulletDamage = 10;
-        [SerializeField] private Transform firePoint;
-        [SerializeField] private float tripleSpreadAngle = 12f;
+        #region Fields
+        [SerializeField] private ShootPattern _currentPattern = ShootPattern.Single;
+        [SerializeField] private Transform _muzzle;
 
-        [Header("Muzzle Flash")]
-        [SerializeField] private SpriteRenderer muzzleFlash;
-        [SerializeField] private float muzzleFlashTime = 0.05f;
+        private float _cooldownTimer;
+        private bool _laserActive;
+        private Coroutine _laserRoutine;
+        #endregion
 
-        private ShootMode _mode = ShootMode.Single;
-        private float _fireRateMultiplier = 1f;
-        private float _cooldown;
-        private bool _fireHeld;
+        #region Properties
+        public ShootPattern CurrentPattern => _currentPattern;
+        #endregion
 
-        private PlayerInputActions _inputActions;
-
-        public ShootMode Mode => _mode;
-
-        private void Awake()
-        {
-            if (firePoint == null)
-            {
-                firePoint = transform;
-            }
-            if (muzzleFlash != null)
-            {
-                muzzleFlash.enabled = false;
-            }
-            _inputActions = new PlayerInputActions();
-        }
-
-        private void OnEnable()
-        {
-            _inputActions.Enable();
-            _inputActions.Gameplay.Fire.performed += OnFirePerformed;
-            _inputActions.Gameplay.Fire.canceled += OnFireCanceled;
-        }
-
-        private void OnDisable()
-        {
-            _inputActions.Gameplay.Fire.performed -= OnFirePerformed;
-            _inputActions.Gameplay.Fire.canceled -= OnFireCanceled;
-            _inputActions.Disable();
-        }
-
-        private void OnFirePerformed(InputAction.CallbackContext ctx) => _fireHeld = true;
-        private void OnFireCanceled(InputAction.CallbackContext ctx) => _fireHeld = false;
-
-        public void SetMode(ShootMode mode) => _mode = mode;
-        public void ResetMode() => _mode = ShootMode.Single;
-
-        public void SetFireRateMultiplier(float multiplier)
-        {
-            _fireRateMultiplier = Mathf.Max(0.05f, multiplier);
-        }
-
+        #region Unity Lifecycle
         private void Update()
         {
-            if (GameManager.Instance != null && GameManager.Instance.State != GameState.Playing)
+            if (_cooldownTimer > 0f) _cooldownTimer -= Time.deltaTime;
+        }
+        #endregion
+
+        #region Pattern Control
+        /// <summary>Sets the active firing pattern.</summary>
+        public void SetPattern(ShootPattern pattern)
+        {
+            // Cancel an active laser if switching away.
+            if (_laserActive && pattern != ShootPattern.Laser)
+                StopLaser();
+            _currentPattern = pattern;
+        }
+
+        /// <summary>Reverts to the default single-shot weapon.</summary>
+        public void ResetToDefault()
+        {
+            SetPattern(ShootPattern.Single);
+        }
+        #endregion
+
+        #region Firing
+        private Vector3 MuzzlePosition => _muzzle != null ? _muzzle.position : transform.position + Vector3.up * 0.5f;
+
+        /// <summary>Attempts to fire the active pattern, respecting cooldown.</summary>
+        public void TryFire()
+        {
+            if (_currentPattern == ShootPattern.Laser)
             {
+                if (!_laserActive)
+                    ActivateLaser();
                 return;
             }
 
-            _cooldown -= Time.deltaTime;
+            if (_cooldownTimer > 0f) return;
 
-            if (_fireHeld && _cooldown <= 0f)
+            switch (_currentPattern)
             {
-                Fire();
-                _cooldown = CurrentFireRate();
-            }
-        }
-
-        private float CurrentFireRate()
-        {
-            // Rapid mode fires roughly twice as fast; power-up multiplier reduces interval.
-            float rate = baseFireRate * _fireRateMultiplier;
-            if (_mode == ShootMode.Rapid)
-            {
-                rate *= 0.5f;
-            }
-            return Mathf.Max(0.03f, rate);
-        }
-
-        private void Fire()
-        {
-            if (BulletPool.Instance == null) return;
-
-            Vector3 origin = firePoint.position;
-
-            switch (_mode)
-            {
-                case ShootMode.Single:
-                case ShootMode.Rapid:
-                    SpawnBullet(origin, Vector2.up);
-                    break;
-
-                case ShootMode.Triple:
-                    SpawnBullet(origin, Vector2.up);
-                    SpawnBullet(origin, RotateVector(Vector2.up, tripleSpreadAngle));
-                    SpawnBullet(origin, RotateVector(Vector2.up, -tripleSpreadAngle));
-                    break;
+                case ShootPattern.Single: FireSingle(); break;
+                case ShootPattern.Double: FireDouble(); break;
+                case ShootPattern.Triple: FireTriple(); break;
+                case ShootPattern.Spread5: FireSpread5(); break;
             }
 
-            AudioManager.Instance?.PlaySFX("shoot");
-            if (muzzleFlash != null)
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlaySFX(AudioManager.Instance.Shoot, Random.Range(0.95f, 1.05f));
+        }
+
+        private void FireSingle()
+        {
+            BulletPattern.Straight(MuzzlePosition, 0f, false);
+            _cooldownTimer = GameConstants.COOLDOWN_SINGLE;
+        }
+
+        private void FireDouble()
+        {
+            Vector3 left = MuzzlePosition + Vector3.left * 0.25f;
+            Vector3 right = MuzzlePosition + Vector3.right * 0.25f;
+            BulletPattern.Straight(left, 0f, false);
+            BulletPattern.Straight(right, 0f, false);
+            _cooldownTimer = GameConstants.COOLDOWN_DOUBLE;
+        }
+
+        private void FireTriple()
+        {
+            BulletPattern.Straight(MuzzlePosition, 0f, false);
+            BulletPattern.Straight(MuzzlePosition, -15f, false);
+            BulletPattern.Straight(MuzzlePosition, 15f, false);
+            _cooldownTimer = GameConstants.COOLDOWN_TRIPLE;
+        }
+
+        private void FireSpread5()
+        {
+            float[] angles = { -30f, -15f, 0f, 15f, 30f };
+            foreach (float a in angles)
+                BulletPattern.Straight(MuzzlePosition, a, false);
+            _cooldownTimer = GameConstants.COOLDOWN_SPREAD5;
+        }
+        #endregion
+
+        #region Laser
+        /// <summary>Starts the timed continuous-damage laser.</summary>
+        public void ActivateLaser()
+        {
+            if (_laserActive) return;
+            _currentPattern = ShootPattern.Laser;
+            _laserActive = true;
+            _laserRoutine = StartCoroutine(LaserRoutine());
+        }
+
+        private void StopLaser()
+        {
+            if (_laserRoutine != null) StopCoroutine(_laserRoutine);
+            _laserActive = false;
+            HideLaserBeam();
+        }
+
+        private LineRenderer _beam;
+
+        private IEnumerator LaserRoutine()
+        {
+            float elapsed = 0f;
+            EnsureBeam();
+
+            while (elapsed < GameConstants.LASER_DURATION)
             {
-                StartCoroutine(MuzzleFlashRoutine());
+                Vector3 origin = MuzzlePosition;
+                Vector3 end = new Vector3(origin.x, GameConstants.CAMERA_TOP + 1f, 0f);
+
+                // Continuous raycast damage against enemies.
+                int enemyMask = 1 << GameConstants.LAYER_ID_ENEMY;
+                RaycastHit2D[] hits = Physics2D.RaycastAll(origin, Vector2.up, (end - origin).magnitude, enemyMask);
+                foreach (RaycastHit2D hit in hits)
+                {
+                    if (hit.collider == null) continue;
+                    EnemyBase enemy = hit.collider.GetComponent<EnemyBase>();
+                    if (enemy != null)
+                    {
+                        enemy.TakeDamage(GameConstants.LASER_DAMAGE_PER_TICK);
+                        end = hit.point; // beam stops at first hit visually
+                        break;
+                    }
+                }
+
+                DrawLaserBeam(origin, end);
+
+                if (AudioManager.Instance != null && Mathf.Approximately(elapsed % 0.2f, 0f))
+                    AudioManager.Instance.PlaySFX(AudioManager.Instance.Shoot, 1.3f, 0.4f);
+
+                elapsed += GameConstants.COOLDOWN_LASER_TICK;
+                yield return new WaitForSeconds(GameConstants.COOLDOWN_LASER_TICK);
             }
+
+            _laserActive = false;
+            HideLaserBeam();
+            _currentPattern = ShootPattern.Single;
         }
 
-        private void SpawnBullet(Vector3 origin, Vector2 direction)
+        private void EnsureBeam()
         {
-            BulletPool.Instance.GetPlayerBullet(origin, direction, bulletSpeed, bulletDamage);
+            if (_beam != null) return;
+            GameObject go = new GameObject("LaserBeam");
+            go.transform.SetParent(transform, false);
+            _beam = go.AddComponent<LineRenderer>();
+            _beam.material = new Material(Shader.Find("Sprites/Default"));
+            _beam.startColor = new Color(1f, 0.2f, 1f, 0.9f);
+            _beam.endColor = new Color(1f, 0.6f, 1f, 0.5f);
+            _beam.startWidth = 0.25f;
+            _beam.endWidth = 0.1f;
+            _beam.numCapVertices = 4;
+            _beam.sortingOrder = 20;
         }
 
-        private static Vector2 RotateVector(Vector2 v, float degrees)
+        private void DrawLaserBeam(Vector3 origin, Vector3 end)
         {
-            float rad = degrees * Mathf.Deg2Rad;
-            float cos = Mathf.Cos(rad);
-            float sin = Mathf.Sin(rad);
-            return new Vector2(v.x * cos - v.y * sin, v.x * sin + v.y * cos);
+            if (_beam == null) return;
+            _beam.enabled = true;
+            _beam.positionCount = 2;
+            _beam.SetPosition(0, origin);
+            _beam.SetPosition(1, end);
         }
 
-        private IEnumerator MuzzleFlashRoutine()
+        private void HideLaserBeam()
         {
-            muzzleFlash.enabled = true;
-            yield return new WaitForSeconds(muzzleFlashTime);
-            muzzleFlash.enabled = false;
+            if (_beam != null) _beam.enabled = false;
         }
-
-        private void OnDestroy()
-        {
-            _inputActions?.Dispose();
-        }
+        #endregion
     }
 }

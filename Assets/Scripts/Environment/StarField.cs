@@ -1,101 +1,91 @@
+using System.Collections.Generic;
 using UnityEngine;
+using SpaceShooter.Core;
+using SpaceShooter.Utilities;
 
 namespace SpaceShooter.Environment
 {
     /// <summary>
-    /// Generates a simple procedural star field using a particle system.
-    /// Creates the illusion of moving through space.
+    /// Procedurally scatters ~200 tiny star quads across the screen, each scrolling
+    /// downward at a random parallax speed and wrapping to the top when off-screen.
     /// </summary>
     public class StarField : MonoBehaviour
     {
-        [Header("Star Field Settings")]
-        [SerializeField] private int starCount = 200;
-        [SerializeField] private float fieldWidth = 20f;
-        [SerializeField] private float fieldHeight = 15f;
-        [SerializeField] private float minStarSpeed = 1f;
-        [SerializeField] private float maxStarSpeed = 4f;
-        [SerializeField] private float minStarSize = 0.02f;
-        [SerializeField] private float maxStarSize = 0.08f;
+        #region Fields
+        [SerializeField] private int _starCount = 200;
+        [SerializeField] private float _minScale = 0.02f;
+        [SerializeField] private float _maxScale = 0.08f;
+        [SerializeField] private float _minSpeed = 0.3f;
+        [SerializeField] private float _maxSpeed = 2.5f;
+        [SerializeField] private int _sortingOrder = -50;
 
-        private struct Star
+        private readonly List<Transform> _stars = new List<Transform>();
+        private readonly List<float> _speeds = new List<float>();
+        private Sprite _starSprite;
+
+        private static readonly Color[] StarColors =
         {
-            public GameObject obj;
-            public float speed;
-        }
+            Color.white,
+            new Color(0.7f, 0.8f, 1f),   // blue-ish
+            new Color(1f, 0.95f, 0.7f),  // yellow-ish
+        };
+        #endregion
 
-        private Star[] stars;
-
-        private void Start()
+        #region Unity Lifecycle
+        private void Awake()
         {
-            GenerateStarField();
-        }
-
-        private void GenerateStarField()
-        {
-            stars = new Star[starCount];
-
-            for (int i = 0; i < starCount; i++)
-            {
-                // Create a simple white square for each star
-                GameObject star = new GameObject("Star_" + i);
-                star.transform.parent = transform;
-
-                SpriteRenderer sr = star.AddComponent<SpriteRenderer>();
-                sr.sprite = CreateStarSprite();
-                sr.sortingOrder = -10;
-
-                // Random position
-                float x = Random.Range(-fieldWidth / 2f, fieldWidth / 2f);
-                float y = Random.Range(-fieldHeight / 2f, fieldHeight / 2f);
-                star.transform.position = new Vector3(x, y, 5f);
-
-                // Random size
-                float size = Random.Range(minStarSize, maxStarSize);
-                star.transform.localScale = new Vector3(size, size, 1f);
-
-                // Random brightness
-                float brightness = Random.Range(0.3f, 1f);
-                sr.color = new Color(brightness, brightness, brightness + Random.Range(0f, 0.1f), brightness);
-
-                stars[i] = new Star
-                {
-                    obj = star,
-                    speed = Random.Range(minStarSpeed, maxStarSpeed)
-                };
-            }
+            _starSprite = SpriteGenerator.GenerateStar();
+            CreateStars();
         }
 
         private void Update()
         {
-            if (stars == null) return;
+            float top = GameConstants.CAMERA_TOP + 0.5f;
+            float bottom = GameConstants.CAMERA_BOTTOM - 0.5f;
+            float range = top - bottom;
 
-            for (int i = 0; i < stars.Length; i++)
+            for (int i = 0; i < _stars.Count; i++)
             {
-                if (stars[i].obj == null) continue;
-
-                // Move star downward
-                stars[i].obj.transform.position += Vector3.down * stars[i].speed * Time.deltaTime;
-
-                // Wrap around when below screen
-                if (stars[i].obj.transform.position.y < -fieldHeight / 2f)
+                Transform star = _stars[i];
+                if (star == null) continue;
+                Vector3 pos = star.position;
+                pos.y -= _speeds[i] * Time.deltaTime;
+                if (pos.y < bottom)
                 {
-                    float x = Random.Range(-fieldWidth / 2f, fieldWidth / 2f);
-                    stars[i].obj.transform.position = new Vector3(x, fieldHeight / 2f, 5f);
+                    pos.y += range;
+                    pos.x = Random.Range(GameConstants.CAMERA_LEFT, GameConstants.CAMERA_RIGHT);
                 }
+                star.position = pos;
             }
         }
+        #endregion
 
-        /// <summary>Creates a simple 1x1 white sprite at runtime.</summary>
-        private Sprite CreateStarSprite()
+        #region Creation
+        private void CreateStars()
         {
-            Texture2D tex = new Texture2D(4, 4);
-            Color[] pixels = new Color[16];
-            for (int i = 0; i < 16; i++)
-                pixels[i] = Color.white;
-            tex.SetPixels(pixels);
-            tex.Apply();
+            for (int i = 0; i < _starCount; i++)
+            {
+                GameObject go = new GameObject($"Star_{i}");
+                go.transform.SetParent(transform, false);
 
-            return Sprite.Create(tex, new Rect(0, 0, 4, 4), new Vector2(0.5f, 0.5f), 4f);
+                float x = Random.Range(GameConstants.CAMERA_LEFT, GameConstants.CAMERA_RIGHT);
+                float y = Random.Range(GameConstants.CAMERA_BOTTOM, GameConstants.CAMERA_TOP);
+                go.transform.position = new Vector3(x, y, 10f);
+
+                float scale = Random.Range(_minScale, _maxScale);
+                go.transform.localScale = Vector3.one * scale;
+
+                SpriteRenderer sr = go.AddComponent<SpriteRenderer>();
+                sr.sprite = _starSprite;
+                sr.color = StarColors[Random.Range(0, StarColors.Length)];
+                sr.sortingOrder = _sortingOrder;
+
+                _stars.Add(go.transform);
+                // Larger stars scroll faster (closer parallax).
+                float speed = Mathf.Lerp(_minSpeed, _maxSpeed, Mathf.InverseLerp(_minScale, _maxScale, scale));
+                _speeds.Add(speed);
+            }
         }
+        #endregion
     }
 }

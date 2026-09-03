@@ -1,47 +1,52 @@
 using System;
+using System.Collections;
 using UnityEngine;
+using SpaceShooter.Environment;
 
 namespace SpaceShooter.Core
 {
-    public enum GameState
-    {
-        MainMenu,
-        Playing,
-        Paused,
-        GameOver
-    }
-
     /// <summary>
-    /// Central game controller. Singleton that persists across scenes.
-    /// Tracks score, high score, wave number and game state, and broadcasts events.
+    /// Game state machine and top-level orchestrator. Persistent singleton.
+    /// Spawns the player, drives wave flow, controls pause/timescale and high score.
     /// </summary>
     public class GameManager : MonoBehaviour
     {
+        #region Singleton
         public static GameManager Instance { get; private set; }
+        #endregion
 
-        private const string HighScoreKey = "HighScore";
+        #region State
+        public enum GameState { MainMenu, Playing, Paused, GameOver, BossIntro }
 
-        [Header("Runtime State (read-only)")]
-        [SerializeField] private GameState state = GameState.MainMenu;
-        [SerializeField] private int score;
-        [SerializeField] private int highScore;
-        [SerializeField] private int waveNumber;
-        [SerializeField] private int lives = 3;
+        [SerializeField] private GameState _state = GameState.MainMenu;
+        public GameState State => _state;
+        #endregion
 
-        public GameState State => state;
-        public int Score => score;
-        public int HighScore => highScore;
-        public int WaveNumber => waveNumber;
-        public int Lives => lives;
+        #region Events
+        public static event Action OnGameStart;
+        public static event Action OnGameOver;
+        public static event Action OnPause;
+        public static event Action OnResume;
+        public static event Action<GameState> OnStateChanged;
+        #endregion
 
-        // Events
-        public event Action<int> OnScoreChanged;
-        public event Action<int> OnWaveChanged;
-        public event Action<int> OnLivesChanged;
-        public event Action OnGameOver;
-        public event Action OnGameStart;
-        public event Action<GameState> OnStateChanged;
+        #region Inspector Fields
+        [Header("Prefabs")]
+        [SerializeField] private GameObject _playerPrefab;
 
+        [Header("References")]
+        [SerializeField] private WaveManager _waveManager;
+
+        [Header("Runtime")]
+        [SerializeField] private Vector3 _playerSpawnPosition = new Vector3(0f, GameConstants.PLAYER_START_Y, 0f);
+        #endregion
+
+        #region Private
+        private GameObject _playerInstance;
+        private int _highScore;
+        #endregion
+
+        #region Unity Lifecycle
         private void Awake()
         {
             if (Instance != null && Instance != this)
@@ -51,119 +56,170 @@ namespace SpaceShooter.Core
             }
             Instance = this;
             DontDestroyOnLoad(gameObject);
-
-            highScore = PlayerPrefs.GetInt(HighScoreKey, 0);
+            LoadHighScore();
         }
 
+        private void OnEnable()
+        {
+            PlayerHealthDeathBridge();
+        }
+
+        private void Update()
+        {
+            if (_state == GameState.Playing || _state == GameState.Paused)
+            {
+                if (Input.GetKeyDown(KeyCode.Escape))
+                {
+                    if (_state == GameState.Playing) PauseGame();
+                    else if (_state == GameState.Paused) ResumeGame();
+                }
+            }
+        }
+        #endregion
+
+        #region State Machine
+        /// <summary>Changes the current state and broadcasts the change.</summary>
         private void SetState(GameState newState)
         {
-            state = newState;
-            OnStateChanged?.Invoke(state);
+            if (_state == newState) return;
+            _state = newState;
+            OnStateChanged?.Invoke(newState);
         }
 
-        /// <summary>Adds points to the score and updates high score if beaten.</summary>
-        public void AddScore(int amount)
-        {
-            if (amount == 0) return;
-            score += Mathf.Max(0, amount);
-            OnScoreChanged?.Invoke(score);
-
-            if (score > highScore)
-            {
-                highScore = score;
-            }
-        }
-
-        public void SetWave(int wave)
-        {
-            waveNumber = wave;
-            OnWaveChanged?.Invoke(waveNumber);
-        }
-
-        public void SetLives(int value)
-        {
-            lives = Mathf.Max(0, value);
-            OnLivesChanged?.Invoke(lives);
-            if (lives <= 0 && state == GameState.Playing)
-            {
-                GameOver();
-            }
-        }
-
-        public void LoseLife()
-        {
-            SetLives(lives - 1);
-        }
-
-        /// <summary>Resets runtime values and begins a new game session.</summary>
+        /// <summary>Begins (or restarts) a new game run.</summary>
         public void StartGame()
         {
-            score = 0;
-            waveNumber = 0;
-            lives = 3;
             Time.timeScale = 1f;
+            if (ScoreManager.Instance != null) ScoreManager.Instance.ResetScore();
 
-            OnScoreChanged?.Invoke(score);
-            OnWaveChanged?.Invoke(waveNumber);
-            OnLivesChanged?.Invoke(lives);
-
+            SpawnPlayer();
             SetState(GameState.Playing);
             OnGameStart?.Invoke();
+
+            if (_waveManager == null) _waveManager = FindObjectOfType<WaveManager>();
+            if (_waveManager != null) _waveManager.BeginWaves();
         }
 
+        /// <summary>Pauses gameplay and freezes time.</summary>
         public void PauseGame()
         {
-            if (state != GameState.Playing) return;
+            if (_state != GameState.Playing) return;
             Time.timeScale = 0f;
             SetState(GameState.Paused);
+            OnPause?.Invoke();
         }
 
+        /// <summary>Resumes gameplay from pause.</summary>
         public void ResumeGame()
         {
-            if (state != GameState.Paused) return;
+            if (_state != GameState.Paused) return;
             Time.timeScale = 1f;
+            SetState(GameState.Playing);
+            OnResume?.Invoke();
+        }
+
+        /// <summary>Enters the boss intro state (used to gate spawning/UI).</summary>
+        public void EnterBossIntro()
+        {
+            SetState(GameState.BossIntro);
+        }
+
+        /// <summary>Returns to the boss fight playing state after intro.</summary>
+        public void ExitBossIntro()
+        {
             SetState(GameState.Playing);
         }
 
-        public void GameOver()
+        /// <summary>Triggers the game over sequence.</summary>
+        public void TriggerGameOver()
         {
-            if (state == GameState.GameOver) return;
-
-            if (score >= highScore)
-            {
-                highScore = score;
-                PlayerPrefs.SetInt(HighScoreKey, highScore);
-                PlayerPrefs.Save();
-            }
-
-            Time.timeScale = 0f;
+            if (_state == GameState.GameOver) return;
             SetState(GameState.GameOver);
+            SaveHighScoreIfNeeded();
+
+            if (CameraShake.Instance != null)
+                CameraShake.Instance.Shake(0.6f, 0.4f);
+
             OnGameOver?.Invoke();
+            StartCoroutine(FreezeAfterDeath());
         }
 
-        /// <summary>Returns true if the current score set a new high score record.</summary>
-        public bool IsNewHighScore()
+        private IEnumerator FreezeAfterDeath()
         {
-            return score >= PlayerPrefs.GetInt(HighScoreKey, 0) && score > 0;
+            yield return new WaitForSecondsRealtime(1.2f);
+            Time.timeScale = 0f;
         }
 
-        public void RestartGame()
+        /// <summary>Returns to the main menu and clears the active run.</summary>
+        public void GoToMainMenu()
         {
             Time.timeScale = 1f;
-            if (SceneLoader.Instance != null)
+            if (_playerInstance != null)
             {
-                SceneLoader.Instance.LoadGameScene();
+                Destroy(_playerInstance);
+                _playerInstance = null;
             }
-            StartGame();
+            if (_waveManager != null) _waveManager.StopWaves();
+            SetState(GameState.MainMenu);
+        }
+        #endregion
+
+        #region Player
+        /// <summary>Spawns (or respawns) the player prefab at the spawn position.</summary>
+        private void SpawnPlayer()
+        {
+            if (_playerInstance != null)
+            {
+                Destroy(_playerInstance);
+                _playerInstance = null;
+            }
+
+            if (_playerPrefab != null)
+            {
+                _playerInstance = Instantiate(_playerPrefab, _playerSpawnPosition, Quaternion.identity);
+            }
+            else
+            {
+                Debug.LogWarning("[GameManager] Player prefab not assigned; spawning empty ship object.");
+                _playerInstance = new GameObject("Player");
+                _playerInstance.transform.position = _playerSpawnPosition;
+            }
         }
 
-        private void OnApplicationQuit()
+        /// <summary>Returns the current player instance (may be null).</summary>
+        public GameObject GetPlayer() => _playerInstance;
+
+        /// <summary>Convenience accessor for the player's world position.</summary>
+        public Vector3 GetPlayerPosition()
         {
-            if (score > PlayerPrefs.GetInt(HighScoreKey, 0))
+            return _playerInstance != null ? _playerInstance.transform.position : Vector3.zero;
+        }
+
+        private void PlayerHealthDeathBridge()
+        {
+            // Reserved hook point. PlayerHealth calls TriggerGameOver() directly on death.
+        }
+        #endregion
+
+        #region High Score
+        private void LoadHighScore()
+        {
+            _highScore = PlayerPrefs.GetInt(GameConstants.PREF_HIGH_SCORE, 0);
+        }
+
+        private void SaveHighScoreIfNeeded()
+        {
+            int current = ScoreManager.Instance != null ? ScoreManager.Instance.GetScore() : 0;
+            if (current > _highScore)
             {
-                PlayerPrefs.SetInt(HighScoreKey, score);
+                _highScore = current;
+                PlayerPrefs.SetInt(GameConstants.PREF_HIGH_SCORE, _highScore);
                 PlayerPrefs.Save();
             }
         }
+
+        /// <summary>Returns the persisted high score.</summary>
+        public int GetHighScore() => _highScore;
+        #endregion
     }
 }
