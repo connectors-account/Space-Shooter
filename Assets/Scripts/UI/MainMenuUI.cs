@@ -6,115 +6,103 @@ using SpaceShooter.Core;
 namespace SpaceShooter.UI
 {
     /// <summary>
-    /// Main menu controller: Play button, high score display, credits toggle,
-    /// an animated pulsing title, and drifting background stars.
+    /// Main menu screen. Shows the title, high score and Play/Quit buttons.
+    /// The title pulses using a PingPong scale tween.
     /// </summary>
     public class MainMenuUI : MonoBehaviour
     {
+        #region Inspector Fields
+        [Header("Root")]
+        [SerializeField] private GameObject _root;
+
+        [Header("Title")]
+        [SerializeField] private TextMeshProUGUI _titleText;
+        [SerializeField] private float _pulseSpeed = 1.5f;
+        [SerializeField] private float _pulseAmount = 0.08f;
+
+        [Header("Score")]
+        [SerializeField] private TextMeshProUGUI _highScoreText;
+
         [Header("Buttons")]
-        [SerializeField] private Button playButton;
-        [SerializeField] private Button creditsButton;
-        [SerializeField] private Button creditsCloseButton;
-        [SerializeField] private Button quitButton;
+        [SerializeField] private Button _playButton;
+        [SerializeField] private Button _quitButton;
+        #endregion
 
-        [Header("Panels")]
-        [SerializeField] private GameObject creditsPanel;
-
-        [Header("Display")]
-        [SerializeField] private TMP_Text highScoreText;
-        [SerializeField] private TMP_Text titleText;
-
-        [Header("Title Animation")]
-        [SerializeField] private float pulseSpeed = 2f;
-        [SerializeField] private float pulseScale = 0.08f;
-
-        [Header("Background Stars")]
-        [SerializeField] private RectTransform starsContainer;
-        [SerializeField] private float starScrollSpeed = 30f;
-
+        #region Private
         private Vector3 _titleBaseScale = Vector3.one;
+        #endregion
 
+        #region Unity Lifecycle
         private void Awake()
         {
-            if (titleText != null)
-            {
-                _titleBaseScale = titleText.transform.localScale;
-            }
+            if (_titleText != null) _titleBaseScale = _titleText.transform.localScale;
+            if (_titleText != null) _titleText.text = "VOID ASSAULT";
         }
 
-        private void Start()
+        private void OnEnable()
         {
-            Time.timeScale = 1f;
+            GameManager.OnStateChanged += HandleStateChanged;
+            if (_playButton != null) _playButton.onClick.AddListener(OnPlayClicked);
+            if (_quitButton != null) _quitButton.onClick.AddListener(OnQuitClicked);
+            RefreshHighScore();
+            SetVisible(GameManager.Instance == null || GameManager.Instance.State == GameManager.GameState.MainMenu);
+        }
 
-            if (playButton != null) playButton.onClick.AddListener(OnPlay);
-            if (creditsButton != null) creditsButton.onClick.AddListener(() => ToggleCredits(true));
-            if (creditsCloseButton != null) creditsCloseButton.onClick.AddListener(() => ToggleCredits(false));
-            if (quitButton != null) quitButton.onClick.AddListener(OnQuit);
-
-            if (creditsPanel != null) creditsPanel.SetActive(false);
-
-            if (highScoreText != null)
-            {
-                int hi = PlayerPrefs.GetInt("HighScore", 0);
-                highScoreText.text = $"HIGH SCORE: {hi}";
-            }
-
-            AudioManager.Instance?.PlayMusic("menu_music");
+        private void OnDisable()
+        {
+            GameManager.OnStateChanged -= HandleStateChanged;
+            if (_playButton != null) _playButton.onClick.RemoveListener(OnPlayClicked);
+            if (_quitButton != null) _quitButton.onClick.RemoveListener(OnQuitClicked);
         }
 
         private void Update()
         {
-            AnimateTitle();
-            ScrollStars();
+            if (_titleText == null) return;
+            float scale = 1f + Mathf.PingPong(Time.unscaledTime * _pulseSpeed, _pulseAmount * 2f) - _pulseAmount;
+            _titleText.transform.localScale = _titleBaseScale * scale;
+        }
+        #endregion
+
+        #region UI
+        private void RefreshHighScore()
+        {
+            int hs = ScoreManager.Instance != null
+                ? ScoreManager.Instance.GetHighScore()
+                : PlayerPrefs.GetInt(GameConstants.PREF_HIGH_SCORE, 0);
+            if (_highScoreText != null) _highScoreText.text = $"HIGH SCORE: {hs}";
         }
 
-        private void AnimateTitle()
+        private void HandleStateChanged(GameManager.GameState state)
         {
-            if (titleText == null) return;
-            float s = 1f + Mathf.Sin(Time.unscaledTime * pulseSpeed) * pulseScale;
-            titleText.transform.localScale = _titleBaseScale * s;
-
-            // Subtle glow via alpha pulse.
-            Color c = titleText.color;
-            c.a = 0.75f + 0.25f * Mathf.Sin(Time.unscaledTime * pulseSpeed);
-            titleText.color = c;
+            SetVisible(state == GameManager.GameState.MainMenu);
+            if (state == GameManager.GameState.MainMenu) RefreshHighScore();
         }
 
-        private void ScrollStars()
+        private void SetVisible(bool visible)
         {
-            if (starsContainer == null) return;
-            Vector2 pos = starsContainer.anchoredPosition;
-            pos.y -= starScrollSpeed * Time.unscaledDeltaTime;
-            if (pos.y <= -starsContainer.rect.height)
-            {
-                pos.y = 0f;
-            }
-            starsContainer.anchoredPosition = pos;
+            if (_root != null) _root.SetActive(visible);
+            else gameObject.SetActive(visible);
+        }
+        #endregion
+
+        #region Button Handlers
+        private void OnPlayClicked()
+        {
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlaySFX(AudioManager.Instance.ButtonClick);
+            if (GameManager.Instance != null) GameManager.Instance.StartGame();
         }
 
-        private void OnPlay()
+        private void OnQuitClicked()
         {
-            if (SceneLoader.Instance != null)
-            {
-                SceneLoader.Instance.LoadGameScene();
-            }
-        }
-
-        private void ToggleCredits(bool show)
-        {
-            if (creditsPanel != null)
-            {
-                creditsPanel.SetActive(show);
-            }
-        }
-
-        private void OnQuit()
-        {
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlaySFX(AudioManager.Instance.ButtonClick);
 #if UNITY_EDITOR
             UnityEditor.EditorApplication.isPlaying = false;
 #else
             Application.Quit();
 #endif
         }
+        #endregion
     }
 }

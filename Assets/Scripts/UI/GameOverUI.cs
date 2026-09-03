@@ -7,95 +7,124 @@ using SpaceShooter.Core;
 namespace SpaceShooter.UI
 {
     /// <summary>
-    /// Game Over screen: animated score count-up, high score display with a
-    /// "NEW HIGH SCORE!" callout when beaten, and Restart / Main Menu buttons.
+    /// Game over screen. Shows final and high scores, a "NEW HIGH SCORE!" label if
+    /// beaten, and Retry / Menu buttons. Slides in from below over 0.5 s.
     /// </summary>
     public class GameOverUI : MonoBehaviour
     {
-        [Header("Panel")]
-        [SerializeField] private GameObject gameOverPanel;
+        #region Inspector Fields
+        [Header("Root")]
+        [SerializeField] private GameObject _root;
+        [SerializeField] private RectTransform _panel;
 
-        [Header("Text")]
-        [SerializeField] private TMP_Text finalScoreText;
-        [SerializeField] private TMP_Text highScoreText;
-        [SerializeField] private GameObject newHighScoreBadge;
+        [Header("Texts")]
+        [SerializeField] private TextMeshProUGUI _finalScoreText;
+        [SerializeField] private TextMeshProUGUI _highScoreText;
+        [SerializeField] private GameObject _newHighScoreLabel;
 
         [Header("Buttons")]
-        [SerializeField] private Button restartButton;
-        [SerializeField] private Button mainMenuButton;
+        [SerializeField] private Button _retryButton;
+        [SerializeField] private Button _menuButton;
 
-        [Header("Count-up")]
-        [SerializeField] private float countUpDuration = 1.2f;
+        [Header("Slide")]
+        [SerializeField] private float _slideDuration = 0.5f;
+        [SerializeField] private float _slideFromY = -800f;
+        #endregion
 
-        private void Start()
+        #region Private
+        private Vector2 _shownPos;
+        private Coroutine _slideRoutine;
+        #endregion
+
+        #region Unity Lifecycle
+        private void Awake()
         {
-            if (gameOverPanel != null) gameOverPanel.SetActive(false);
-            if (newHighScoreBadge != null) newHighScoreBadge.SetActive(false);
+            if (_panel != null) _shownPos = _panel.anchoredPosition;
+        }
 
-            if (restartButton != null) restartButton.onClick.AddListener(Restart);
-            if (mainMenuButton != null) mainMenuButton.onClick.AddListener(GoToMainMenu);
+        private void OnEnable()
+        {
+            GameManager.OnGameOver += HandleGameOver;
+            if (_retryButton != null) _retryButton.onClick.AddListener(OnRetry);
+            if (_menuButton != null) _menuButton.onClick.AddListener(OnMenu);
+            SetVisible(false);
+        }
 
-            if (GameManager.Instance != null)
+        private void OnDisable()
+        {
+            GameManager.OnGameOver -= HandleGameOver;
+            if (_retryButton != null) _retryButton.onClick.RemoveListener(OnRetry);
+            if (_menuButton != null) _menuButton.onClick.RemoveListener(OnMenu);
+        }
+        #endregion
+
+        #region Game Over
+        private void HandleGameOver()
+        {
+            SetVisible(true);
+
+            int score = ScoreManager.Instance != null ? ScoreManager.Instance.GetScore() : 0;
+            int high = ScoreManager.Instance != null ? ScoreManager.Instance.GetHighScore() : 0;
+            bool beaten = ScoreManager.Instance != null && ScoreManager.Instance.WasHighScoreBeaten();
+
+            if (_finalScoreText != null) _finalScoreText.text = $"SCORE: {score}";
+            if (_highScoreText != null) _highScoreText.text = $"HIGH SCORE: {high}";
+            if (_newHighScoreLabel != null) _newHighScoreLabel.SetActive(beaten);
+
+            if (_panel != null)
             {
-                GameManager.Instance.OnGameOver += Show;
+                if (_slideRoutine != null) StopCoroutine(_slideRoutine);
+                _slideRoutine = StartCoroutine(SlideIn());
             }
         }
 
-        private void OnDestroy()
+        private IEnumerator SlideIn()
         {
-            if (GameManager.Instance != null)
+            Vector2 from = new Vector2(_shownPos.x, _slideFromY);
+            float elapsed = 0f;
+            _panel.anchoredPosition = from;
+            while (elapsed < _slideDuration)
             {
-                GameManager.Instance.OnGameOver -= Show;
-            }
-        }
-
-        private void Show()
-        {
-            if (gameOverPanel != null) gameOverPanel.SetActive(true);
-
-            int finalScore = GameManager.Instance != null ? GameManager.Instance.Score : 0;
-            int highScore = GameManager.Instance != null ? GameManager.Instance.HighScore : 0;
-
-            if (highScoreText != null) highScoreText.text = $"HIGH SCORE: {highScore}";
-
-            bool isNewHigh = GameManager.Instance != null && GameManager.Instance.IsNewHighScore();
-            if (newHighScoreBadge != null) newHighScoreBadge.SetActive(isNewHigh);
-
-            StartCoroutine(CountUp(finalScore));
-        }
-
-        private IEnumerator CountUp(int target)
-        {
-            if (finalScoreText == null) yield break;
-
-            float t = 0f;
-            float duration = Mathf.Max(0.01f, countUpDuration);
-            while (t < duration)
-            {
-                t += Time.unscaledDeltaTime;
-                int value = Mathf.RoundToInt(Mathf.Lerp(0f, target, t / duration));
-                finalScoreText.text = $"SCORE: {value}";
+                float t = elapsed / _slideDuration;
+                // Ease-out using LerpUnclamped with a smooth curve.
+                float eased = 1f - Mathf.Pow(1f - t, 3f);
+                _panel.anchoredPosition = Vector2.LerpUnclamped(from, _shownPos, eased);
+                elapsed += Time.unscaledDeltaTime;
                 yield return null;
             }
-            finalScoreText.text = $"SCORE: {target}";
+            _panel.anchoredPosition = _shownPos;
+            _slideRoutine = null;
+        }
+        #endregion
+
+        #region Visibility
+        private void SetVisible(bool visible)
+        {
+            if (_root != null) _root.SetActive(visible);
+            else gameObject.SetActive(visible);
+        }
+        #endregion
+
+        #region Button Handlers
+        private void OnRetry()
+        {
+            Click();
+            SetVisible(false);
+            if (GameManager.Instance != null) GameManager.Instance.StartGame();
         }
 
-        private void Restart()
+        private void OnMenu()
         {
-            Time.timeScale = 1f;
-            if (SceneLoader.Instance != null)
-            {
-                SceneLoader.Instance.LoadGameScene();
-            }
+            Click();
+            SetVisible(false);
+            if (GameManager.Instance != null) GameManager.Instance.GoToMainMenu();
         }
 
-        private void GoToMainMenu()
+        private void Click()
         {
-            Time.timeScale = 1f;
-            if (SceneLoader.Instance != null)
-            {
-                SceneLoader.Instance.LoadMainMenu();
-            }
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlaySFX(AudioManager.Instance.ButtonClick);
         }
+        #endregion
     }
 }

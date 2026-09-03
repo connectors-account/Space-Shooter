@@ -1,109 +1,117 @@
 using UnityEngine;
+using SpaceShooter.Core;
+#if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
-using SpaceShooter.Utilities;
+#endif
 
 namespace SpaceShooter.Player
 {
     /// <summary>
-    /// Player ship movement using the Unity New Input System.
-    /// Supports WASD + arrow keys, smooth acceleration/deceleration, screen clamping,
-    /// and a visual tilt on horizontal movement. Base speed 8, modified by power-ups.
+    /// Drives player movement (WASD/arrows), clamps to camera bounds, reads fire
+    /// input (Space / left mouse) and applies a velocity-based tilt animation.
+    /// Reads legacy Input and the new Input System when available.
     /// </summary>
-    [RequireComponent(typeof(Rigidbody2D))]
+    [RequireComponent(typeof(PlayerShooter))]
     public class PlayerController : MonoBehaviour
     {
-        [Header("Movement")]
-        [SerializeField] private float baseSpeed = 8f;
-        [SerializeField] private float acceleration = 40f;
-        [SerializeField] private float deceleration = 30f;
-        [SerializeField] private float edgeMargin = 0.5f;
+        #region Fields
+        [SerializeField] private float _moveSpeed = GameConstants.PLAYER_MOVE_SPEED;
+        [SerializeField] private Transform _shipVisual;
 
-        [Header("Tilt")]
-        [SerializeField] private Transform spriteTransform;
-        [SerializeField] private float maxTiltAngle = 25f;
-        [SerializeField] private float tiltSpeed = 10f;
+        private PlayerShooter _shooter;
+        private float _lastHorizontal;
+        #endregion
 
-        private Rigidbody2D _rb;
-        private Vector2 _moveInput;
-        private Vector2 _currentVelocity;
-        private float _speedMultiplier = 1f;
+        #region Properties
+        public float MoveSpeed => _moveSpeed;
+        #endregion
 
-        private PlayerInputActions _inputActions;
-
-        public float CurrentSpeed => baseSpeed * _speedMultiplier;
-
+        #region Unity Lifecycle
         private void Awake()
         {
-            _rb = GetComponent<Rigidbody2D>();
-            _rb.gravityScale = 0f;
-            _rb.bodyType = RigidbodyType2D.Kinematic;
-
-            if (spriteTransform == null)
-            {
-                spriteTransform = transform;
-            }
-
-            _inputActions = new PlayerInputActions();
-        }
-
-        private void OnEnable()
-        {
-            _inputActions.Enable();
-            _inputActions.Gameplay.Move.performed += OnMove;
-            _inputActions.Gameplay.Move.canceled += OnMove;
-        }
-
-        private void OnDisable()
-        {
-            _inputActions.Gameplay.Move.performed -= OnMove;
-            _inputActions.Gameplay.Move.canceled -= OnMove;
-            _inputActions.Disable();
-        }
-
-        private void OnMove(InputAction.CallbackContext ctx)
-        {
-            _moveInput = ctx.ReadValue<Vector2>();
-        }
-
-        public void SetSpeedMultiplier(float multiplier)
-        {
-            _speedMultiplier = Mathf.Max(0.1f, multiplier);
+            _shooter = GetComponent<PlayerShooter>();
+            if (_shipVisual == null) _shipVisual = transform;
+            gameObject.tag = GameConstants.TAG_PLAYER;
+            gameObject.layer = GameConstants.LAYER_ID_PLAYER;
         }
 
         private void Update()
         {
-            ApplyTilt();
+            if (GameManager.Instance != null && GameManager.Instance.State != GameManager.GameState.Playing)
+                return;
+
+            Vector2 input = ReadMoveInput();
+            Move(input);
+            ApplyTilt(input.x);
+
+            if (ReadFireInput())
+                _shooter.TryFire();
         }
+        #endregion
 
-        private void FixedUpdate()
+        #region Input
+        private Vector2 ReadMoveInput()
         {
-            Vector2 targetVelocity = _moveInput.normalized * CurrentSpeed;
+            float h = 0f;
+            float v = 0f;
 
-            // Smooth accelerate toward target, decelerate when no input.
-            float rate = _moveInput.sqrMagnitude > 0.01f ? acceleration : deceleration;
-            _currentVelocity = Vector2.MoveTowards(_currentVelocity, targetVelocity, rate * Time.fixedDeltaTime);
-
-            Vector2 newPos = _rb.position + _currentVelocity * Time.fixedDeltaTime;
-
-            if (ScreenBounds.Instance != null)
+#if ENABLE_INPUT_SYSTEM
+            if (Keyboard.current != null)
             {
-                newPos = ScreenBounds.Instance.Clamp(newPos, edgeMargin);
+                if (Keyboard.current.aKey.isPressed || Keyboard.current.leftArrowKey.isPressed) h -= 1f;
+                if (Keyboard.current.dKey.isPressed || Keyboard.current.rightArrowKey.isPressed) h += 1f;
+                if (Keyboard.current.wKey.isPressed || Keyboard.current.upArrowKey.isPressed) v += 1f;
+                if (Keyboard.current.sKey.isPressed || Keyboard.current.downArrowKey.isPressed) v -= 1f;
             }
+#endif
+            // Fall back to / combine with legacy input axes for maximum compatibility.
+            if (Mathf.Approximately(h, 0f)) h = Input.GetAxisRaw("Horizontal");
+            if (Mathf.Approximately(v, 0f)) v = Input.GetAxisRaw("Vertical");
 
-            _rb.MovePosition(newPos);
+            Vector2 v2 = new Vector2(h, v);
+            if (v2.sqrMagnitude > 1f) v2.Normalize();
+            return v2;
         }
 
-        private void ApplyTilt()
+        private bool ReadFireInput()
         {
-            float targetTilt = -_moveInput.x * maxTiltAngle;
-            Quaternion targetRot = Quaternion.Euler(0f, 0f, targetTilt);
-            spriteTransform.localRotation = Quaternion.Lerp(
-                spriteTransform.localRotation, targetRot, tiltSpeed * Time.deltaTime);
+            bool fire = Input.GetKey(KeyCode.Space) || Input.GetMouseButton(0);
+#if ENABLE_INPUT_SYSTEM
+            if (Keyboard.current != null && Keyboard.current.spaceKey.isPressed) fire = true;
+            if (Mouse.current != null && Mouse.current.leftButton.isPressed) fire = true;
+#endif
+            return fire;
+        }
+        #endregion
+
+        #region Movement
+        private void Move(Vector2 input)
+        {
+            Vector3 delta = (Vector3)input * _moveSpeed * Time.deltaTime;
+            Vector3 pos = transform.position + delta;
+
+            pos.x = Mathf.Clamp(pos.x, GameConstants.CAMERA_LEFT, GameConstants.CAMERA_RIGHT);
+            pos.y = Mathf.Clamp(pos.y, GameConstants.CAMERA_BOTTOM, GameConstants.CAMERA_TOP);
+
+            transform.position = pos;
+            _lastHorizontal = input.x;
         }
 
-        private void OnDestroy()
+        private void ApplyTilt(float horizontal)
         {
-            _inputActions?.Dispose();
+            if (_shipVisual == null) return;
+            float targetZ = -horizontal * GameConstants.PLAYER_TILT_MAX_ANGLE;
+            Quaternion target = Quaternion.Euler(0f, 0f, targetZ);
+            _shipVisual.localRotation = Quaternion.Lerp(_shipVisual.localRotation, target, 10f * Time.deltaTime);
         }
+        #endregion
+
+        #region Public API
+        /// <summary>Sets the ship's movement speed (used by speed-boost power-up).</summary>
+        public void SetMoveSpeed(float speed)
+        {
+            _moveSpeed = speed;
+        }
+        #endregion
     }
 }

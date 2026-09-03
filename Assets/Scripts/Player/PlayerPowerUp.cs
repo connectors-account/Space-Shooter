@@ -2,168 +2,117 @@ using System;
 using System.Collections;
 using UnityEngine;
 using SpaceShooter.Core;
+using SpaceShooter.Pickups;
 
 namespace SpaceShooter.Player
 {
-    public enum PowerUpType
-    {
-        Shield,
-        RapidFire,
-        TripleShot,
-        SpeedBoost
-    }
-
     /// <summary>
-    /// Manages active timed power-ups on the player. Each lasts 10 seconds and drives a
-    /// visual glow indicator. Exposes remaining time for the HUD.
+    /// Applies collected power-ups to the player, managing timed effects
+    /// (weapon patterns, speed boost) and reverting them when they expire.
     /// </summary>
-    [RequireComponent(typeof(PlayerHealth))]
+    [RequireComponent(typeof(PlayerShooter))]
     public class PlayerPowerUp : MonoBehaviour
     {
-        [Header("Config")]
-        [SerializeField] private float duration = 10f;
-        [SerializeField] private SpriteRenderer shipSprite;
-        [SerializeField] private float speedBoostMultiplier = 1.6f;
-        [SerializeField] private float rapidFireMultiplier = 0.4f;
+        #region Events
+        /// <summary>Fired when a timed power-up starts. Args: type, duration.</summary>
+        public static event Action<PowerUpType, float> OnPowerUpActivated;
+        /// <summary>Fired when the active timed power-up expires.</summary>
+        public static event Action OnPowerUpExpired;
+        #endregion
 
-        private PlayerController _controller;
+        #region Fields
         private PlayerShooter _shooter;
         private PlayerHealth _health;
+        private PlayerController _controller;
 
-        private readonly System.Collections.Generic.Dictionary<PowerUpType, Coroutine> _active =
-            new System.Collections.Generic.Dictionary<PowerUpType, Coroutine>();
+        private Coroutine _weaponTimer;
+        private Coroutine _speedTimer;
+        #endregion
 
-        private Color _baseColor;
-
-        public event Action<PowerUpType> OnPowerUpActivated;
-        public event Action<PowerUpType> OnPowerUpExpired;
-        public event Action<PowerUpType, float, float> OnPowerUpTick; // type, remaining, total
-
-        public bool HasActivePowerUp => _active.Count > 0;
-
+        #region Unity Lifecycle
         private void Awake()
         {
-            _controller = GetComponent<PlayerController>();
             _shooter = GetComponent<PlayerShooter>();
             _health = GetComponent<PlayerHealth>();
-            if (shipSprite == null)
-            {
-                shipSprite = GetComponent<SpriteRenderer>();
-            }
-            if (shipSprite != null)
-            {
-                _baseColor = shipSprite.color;
-            }
+            _controller = GetComponent<PlayerController>();
         }
+        #endregion
 
-        /// <summary>Activates (or refreshes) a power-up of the given type.</summary>
-        public void Activate(PowerUpType type)
+        #region Apply
+        /// <summary>Applies a power-up effect based on its type.</summary>
+        public void ApplyPowerUp(PowerUpType t)
         {
-            if (_active.TryGetValue(type, out Coroutine existing) && existing != null)
-            {
-                StopCoroutine(existing);
-            }
-
-            AudioManager.Instance?.PlaySFX("powerup");
-
-            switch (type)
+            switch (t)
             {
                 case PowerUpType.Shield:
-                    _health?.ActivateShield();
+                    if (_health != null) _health.AddShield();
                     break;
-                case PowerUpType.RapidFire:
-                    _shooter?.SetMode(ShootMode.Rapid);
-                    _shooter?.SetFireRateMultiplier(rapidFireMultiplier);
+
+                case PowerUpType.HealthPack:
+                    if (_health != null) _health.Heal(GameConstants.POWERUP_HEALTHPACK_AMOUNT);
                     break;
+
                 case PowerUpType.TripleShot:
-                    _shooter?.SetMode(ShootMode.Triple);
+                    ActivateTimedWeapon(ShootPattern.Triple, PowerUpType.TripleShot);
                     break;
+
+                case PowerUpType.Spread5:
+                    ActivateTimedWeapon(ShootPattern.Spread5, PowerUpType.Spread5);
+                    break;
+
+                case PowerUpType.Laser:
+                    ActivateTimedWeapon(ShootPattern.Laser, PowerUpType.Laser);
+                    break;
+
                 case PowerUpType.SpeedBoost:
-                    _controller?.SetSpeedMultiplier(speedBoostMultiplier);
+                    ActivateSpeedBoost();
+                    break;
+
+                case PowerUpType.Nuke:
+                    // Handled by PowerUp/WaveManager directly; nothing to apply here.
                     break;
             }
-
-            OnPowerUpActivated?.Invoke(type);
-            _active[type] = StartCoroutine(PowerUpTimer(type));
-            UpdateGlow();
         }
+        #endregion
 
-        private IEnumerator PowerUpTimer(PowerUpType type)
+        #region Timed Weapon
+        private void ActivateTimedWeapon(ShootPattern pattern, PowerUpType type)
         {
-            float remaining = duration;
-            while (remaining > 0f)
-            {
-                remaining -= Time.deltaTime;
-                OnPowerUpTick?.Invoke(type, Mathf.Max(0f, remaining), duration);
-                yield return null;
-            }
+            if (_shooter == null) return;
+            _shooter.SetPattern(pattern);
 
-            Deactivate(type);
+            if (_weaponTimer != null) StopCoroutine(_weaponTimer);
+            _weaponTimer = StartCoroutine(WeaponTimerRoutine(type));
         }
 
-        private void Deactivate(PowerUpType type)
+        private IEnumerator WeaponTimerRoutine(PowerUpType type)
         {
-            switch (type)
-            {
-                case PowerUpType.RapidFire:
-                    _shooter?.ResetMode();
-                    _shooter?.SetFireRateMultiplier(1f);
-                    break;
-                case PowerUpType.TripleShot:
-                    _shooter?.ResetMode();
-                    break;
-                case PowerUpType.SpeedBoost:
-                    _controller?.SetSpeedMultiplier(1f);
-                    break;
-                case PowerUpType.Shield:
-                    // Shield ends when absorbed or timer runs out; nothing extra to reset.
-                    break;
-            }
-
-            _active.Remove(type);
-            OnPowerUpExpired?.Invoke(type);
-            UpdateGlow();
+            OnPowerUpActivated?.Invoke(type, GameConstants.POWERUP_TIMED_DURATION);
+            yield return new WaitForSeconds(GameConstants.POWERUP_TIMED_DURATION);
+            if (_shooter != null) _shooter.ResetToDefault();
+            OnPowerUpExpired?.Invoke();
+            _weaponTimer = null;
         }
+        #endregion
 
-        private void UpdateGlow()
+        #region Speed Boost
+        private void ActivateSpeedBoost()
         {
-            if (shipSprite == null) return;
+            if (_controller == null) return;
+            _controller.SetMoveSpeed(GameConstants.PLAYER_BOOSTED_MOVE_SPEED);
 
-            if (_active.Count == 0)
-            {
-                shipSprite.color = _baseColor;
-                return;
-            }
-
-            // Blend a glow tint based on the most recently active power-up set.
-            Color glow = _baseColor;
-            foreach (var kvp in _active)
-            {
-                glow = Color.Lerp(glow, GlowColor(kvp.Key), 0.5f);
-            }
-            shipSprite.color = glow;
+            if (_speedTimer != null) StopCoroutine(_speedTimer);
+            _speedTimer = StartCoroutine(SpeedTimerRoutine());
         }
 
-        private static Color GlowColor(PowerUpType type)
+        private IEnumerator SpeedTimerRoutine()
         {
-            switch (type)
-            {
-                case PowerUpType.Shield: return new Color(0.3f, 0.6f, 1f);
-                case PowerUpType.RapidFire: return new Color(1f, 0.5f, 0.2f);
-                case PowerUpType.TripleShot: return new Color(0.4f, 1f, 0.4f);
-                case PowerUpType.SpeedBoost: return new Color(1f, 1f, 0.3f);
-                default: return Color.white;
-            }
+            OnPowerUpActivated?.Invoke(PowerUpType.SpeedBoost, GameConstants.PLAYER_SPEED_BOOST_DURATION);
+            yield return new WaitForSeconds(GameConstants.PLAYER_SPEED_BOOST_DURATION);
+            if (_controller != null) _controller.SetMoveSpeed(GameConstants.PLAYER_MOVE_SPEED);
+            OnPowerUpExpired?.Invoke();
+            _speedTimer = null;
         }
-
-        private void OnDisable()
-        {
-            StopAllCoroutines();
-            _active.Clear();
-            if (shipSprite != null)
-            {
-                shipSprite.color = _baseColor;
-            }
-        }
+        #endregion
     }
 }

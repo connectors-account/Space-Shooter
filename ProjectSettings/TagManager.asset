@@ -4,45 +4,42 @@
 TagManager:
   serializedVersion: 2
   tags:
-  - Player
-  - Enemy
-  - PlayerBullet
-  - EnemyBullet
-  - PowerUp
   - Boss
+  - Bullet
+  - PowerUp
   layers:
   - Default
   - TransparentFX
   - Ignore Raycast
-  - 
+  -
   - Water
   - UI
-  - 
-  - 
   - Player
   - Enemy
   - PlayerBullet
   - EnemyBullet
   - PowerUp
-  - Boss
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
+  -
+  -
+  -
+  -
+  -
+  -
+  -
+  -
+  -
+  -
+  -
+  -
+  -
+  -
+  -
+  -
+  -
+  -
+  -
+  -
+  -
   m_SortingLayers:
   - name: Default
     uniqueID: 0

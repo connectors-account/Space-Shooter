@@ -1,116 +1,77 @@
 using System.Collections;
 using UnityEngine;
 using TMPro;
-using SpaceShooter.Enemy;
+using SpaceShooter.Core;
 
 namespace SpaceShooter.UI
 {
     /// <summary>
-    /// Announces each wave with text that slides in from the side, holds, then slides out.
-    /// Shows "BOSS INCOMING!" on boss waves.
+    /// Displays a large animated wave banner on WaveManager.OnWaveStart:
+    /// fades in, holds, then fades out using a CanvasGroup alpha coroutine.
     /// </summary>
+    [RequireComponent(typeof(CanvasGroup))]
     public class WaveAnnouncerUI : MonoBehaviour
     {
-        [Header("References")]
-        [SerializeField] private WaveManager waveManager;
-        [SerializeField] private RectTransform announcementRoot;
-        [SerializeField] private TMP_Text mainText;
-        [SerializeField] private TMP_Text subText;
+        #region Inspector Fields
+        [SerializeField] private TextMeshProUGUI _announceText;
+        [SerializeField] private float _fadeInTime = 0.4f;
+        [SerializeField] private float _holdTime = 1.5f;
+        [SerializeField] private float _fadeOutTime = 0.4f;
+        #endregion
 
-        [Header("Animation")]
-        [SerializeField] private float slideDistance = 900f;
-        [SerializeField] private float slideDuration = 0.5f;
-        [SerializeField] private float holdDuration = 2f;
-
-        [Header("Colors")]
-        [SerializeField] private Color normalColor = Color.cyan;
-        [SerializeField] private Color bossColor = new Color(1f, 0.4f, 0.1f);
-
+        #region Private
+        private CanvasGroup _canvasGroup;
         private Coroutine _routine;
+        #endregion
 
+        #region Unity Lifecycle
         private void Awake()
         {
-            if (waveManager == null)
-            {
-                waveManager = FindObjectOfType<WaveManager>();
-            }
+            _canvasGroup = GetComponent<CanvasGroup>();
+            _canvasGroup.alpha = 0f;
         }
 
-        private void Start()
+        private void OnEnable()
         {
-            if (announcementRoot != null)
-            {
-                Vector2 p = announcementRoot.anchoredPosition;
-                p.x = -slideDistance;
-                announcementRoot.anchoredPosition = p;
-            }
-
-            if (waveManager != null)
-            {
-                waveManager.OnWaveAnnounced += Announce;
-            }
+            WaveManager.OnWaveStart += HandleWaveStart;
         }
 
-        private void OnDestroy()
+        private void OnDisable()
         {
-            if (waveManager != null)
-            {
-                waveManager.OnWaveAnnounced -= Announce;
-            }
+            WaveManager.OnWaveStart -= HandleWaveStart;
+        }
+        #endregion
+
+        #region Announcement
+        private void HandleWaveStart(int waveNumber, string waveName)
+        {
+            if (_announceText != null)
+                _announceText.text = $"WAVE {waveNumber} — {waveName}";
+
+            if (_routine != null) StopCoroutine(_routine);
+            _routine = StartCoroutine(AnnounceRoutine());
         }
 
-        private void Announce(int waveNumber, bool isBossWave)
+        private IEnumerator AnnounceRoutine()
         {
-            if (_routine != null)
-            {
-                StopCoroutine(_routine);
-            }
-            _routine = StartCoroutine(AnnounceRoutine(waveNumber, isBossWave));
+            yield return Fade(0f, 1f, _fadeInTime);
+            yield return new WaitForSeconds(_holdTime);
+            yield return Fade(1f, 0f, _fadeOutTime);
+            _routine = null;
         }
 
-        private IEnumerator AnnounceRoutine(int waveNumber, bool isBossWave)
+        private IEnumerator Fade(float from, float to, float duration)
         {
-            if (mainText != null)
+            float elapsed = 0f;
+            _canvasGroup.alpha = from;
+            while (elapsed < duration)
             {
-                mainText.text = $"WAVE {waveNumber}";
-                mainText.color = isBossWave ? bossColor : normalColor;
-            }
-            if (subText != null)
-            {
-                subText.gameObject.SetActive(isBossWave);
-                if (isBossWave) subText.text = "BOSS INCOMING!";
-            }
-
-            if (announcementRoot == null) yield break;
-
-            // Slide in from the left.
-            yield return Slide(-slideDistance, 0f);
-            // Hold on-screen.
-            yield return new WaitForSeconds(holdDuration);
-            // Slide out to the right.
-            yield return Slide(0f, slideDistance);
-            // Reset off-screen left for next time.
-            Vector2 reset = announcementRoot.anchoredPosition;
-            reset.x = -slideDistance;
-            announcementRoot.anchoredPosition = reset;
-        }
-
-        private IEnumerator Slide(float fromX, float toX)
-        {
-            float t = 0f;
-            float duration = Mathf.Max(0.01f, slideDuration);
-            while (t < duration)
-            {
-                t += Time.deltaTime;
-                float k = Mathf.SmoothStep(0f, 1f, t / duration);
-                Vector2 pos = announcementRoot.anchoredPosition;
-                pos.x = Mathf.Lerp(fromX, toX, k);
-                announcementRoot.anchoredPosition = pos;
+                _canvasGroup.alpha = Mathf.Lerp(from, to, elapsed / duration);
+                elapsed += Time.deltaTime;
                 yield return null;
             }
-            Vector2 final = announcementRoot.anchoredPosition;
-            final.x = toX;
-            announcementRoot.anchoredPosition = final;
+            _canvasGroup.alpha = to;
         }
+        #endregion
     }
 }
