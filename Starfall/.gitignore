@@ -1,0 +1,19 @@
+/Library/
+/Temp/
+/Obj/
+/Logs/
+/UserSettings/
+/Builds/
+/.vs/
+/.idea/
+*.csproj
+*.sln
+*.user
+*.pidb
+*.booproj
+*.suo
+*.tmp
+*.log
+.DS_Store
+__pycache__/
+# Generated content is intentionally NOT ignored: commit it after Unity generates it.
