@@ -1,0 +1,26 @@
+Library/
+Temp/
+Obj/
+Logs/
+UserSettings/
+Builds/
+.vs/
+.idea/
+*.csproj
+*.sln
+*.user
+*.pidb
+*.booproj
+*.unityproj
+__pycache__/
+ArtSource/*-response.json
+.env
+.DS_Store
+
+
+# Local workspace marker and automatic document-viewer conversions (not source).
+.abacus.donotdelete
+/ASSETS.pdf
+/ASSETS.docx
+/Documentation/Validation.pdf
+/Documentation/Validation.docx

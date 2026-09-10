@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!129 &1
+PlayerSettings:
+  m_ObjectHideFlags: 0
+  serializedVersion: 28
+  companyName: Starfall Studio
+  productName: Starfall
+  bundleVersion: 1.0.0
+  defaultScreenWidth: 720
+  defaultScreenHeight: 900
+  defaultIsNativeResolution: 0
+  runInBackground: 0
+  captureSingleScreen: 0
+  resizableWindow: 0
+  fullscreenMode: 3
+  visibleInBackground: 1
+  allowFullscreenSwitch: 0
+  m_ActiveColorSpace: 0
+  activeInputHandler: 0
+  scriptingBackend:
+    Standalone: 0
+  apiCompatibilityLevelPerPlatform:
+    Standalone: 6
