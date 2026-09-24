@@ -1,0 +1,52 @@
+{
+  "scope": "Offline source and media validation only; not a Unity build or gameplay test",
+  "checks": [
+    {
+      "name": "runtime_source_syntax",
+      "passed": true,
+      "detail": "13 C# files compiled against hand-written stubs, NOT Unity assemblies"
+    },
+    {
+      "name": "editor_source_syntax",
+      "passed": true,
+      "detail": "2 editor files and editor-conditional runtime paths compiled against stubs"
+    },
+    {
+      "name": "rule_and_health_assertions",
+      "passed": true,
+      "detail": "PASS: 51 source-level rule/health assertions. No Unity engine or Windows runtime exercised."
+    },
+    {
+      "name": "sprites",
+      "passed": true,
+      "detail": "Five valid RGBA PNG assets; four illustrated sprites visually inspected in SpritePreview.png"
+    },
+    {
+      "name": "audio",
+      "passed": true,
+      "detail": "Seven non-silent 44.1 kHz PCM WAVs plus a decodable generated MP3 laser effect"
+    },
+    {
+      "name": "settings_and_packages",
+      "passed": true,
+      "detail": "Unity 6000.3.11f1, legacy key input, four pinned built-in modules, consistent package lock"
+    },
+    {
+      "name": "asset_metadata",
+      "passed": true,
+      "detail": "33 stable unique asset/folder GUIDs"
+    },
+    {
+      "name": "source_references",
+      "passed": true,
+      "detail": "All setup asset paths exist; component filenames match; real scene/prefab save and Win64 build calls present"
+    }
+  ],
+  "not_verified": [
+    "Unity first import and actual assembly compilation",
+    "Editor scene/prefab generation and serialized references",
+    "Unity Play mode, physics, collision, sound playback and UI",
+    "Windows x86_64 build and executable launch"
+  ],
+  "windows_executable_built": false
+}
