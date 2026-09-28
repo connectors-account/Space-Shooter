@@ -1,0 +1,253 @@
+{
+  "scope": "Static syntax, source wiring and asset checks only; not Unity compilation or playtesting.",
+  "checks": [
+    {
+      "name": "C# syntax: GameRules.cs",
+      "pass": true
+    },
+    {
+      "name": "No unfinished markers: GameRules.cs",
+      "pass": true
+    },
+    {
+      "name": "C# syntax: GameAssets.cs",
+      "pass": true
+    },
+    {
+      "name": "No unfinished markers: GameAssets.cs",
+      "pass": true
+    },
+    {
+      "name": "C# syntax: PilotInput.cs",
+      "pass": true
+    },
+    {
+      "name": "No unfinished markers: PilotInput.cs",
+      "pass": true
+    },
+    {
+      "name": "C# syntax: SpaceBackdrop.cs",
+      "pass": true
+    },
+    {
+      "name": "No unfinished markers: SpaceBackdrop.cs",
+      "pass": true
+    },
+    {
+      "name": "C# syntax: FlightGame.cs",
+      "pass": true
+    },
+    {
+      "name": "No unfinished markers: FlightGame.cs",
+      "pass": true
+    },
+    {
+      "name": "C# syntax: FlightHud.cs",
+      "pass": true
+    },
+    {
+      "name": "No unfinished markers: FlightHud.cs",
+      "pass": true
+    },
+    {
+      "name": "C# syntax: ProjectSetup.cs",
+      "pass": true
+    },
+    {
+      "name": "No unfinished markers: ProjectSetup.cs",
+      "pass": true
+    },
+    {
+      "name": "Valid transparent sprite: player",
+      "pass": true
+    },
+    {
+      "name": "Sprite bootstrap reference: player",
+      "pass": true
+    },
+    {
+      "name": "Valid transparent sprite: scout",
+      "pass": true
+    },
+    {
+      "name": "Sprite bootstrap reference: scout",
+      "pass": true
+    },
+    {
+      "name": "Valid transparent sprite: fighter",
+      "pass": true
+    },
+    {
+      "name": "Sprite bootstrap reference: fighter",
+      "pass": true
+    },
+    {
+      "name": "Valid transparent sprite: gunship",
+      "pass": true
+    },
+    {
+      "name": "Sprite bootstrap reference: gunship",
+      "pass": true
+    },
+    {
+      "name": "Valid transparent sprite: boss",
+      "pass": true
+    },
+    {
+      "name": "Sprite bootstrap reference: boss",
+      "pass": true
+    },
+    {
+      "name": "Valid transparent sprite: repair",
+      "pass": true
+    },
+    {
+      "name": "Sprite bootstrap reference: repair",
+      "pass": true
+    },
+    {
+      "name": "Valid transparent sprite: spread",
+      "pass": true
+    },
+    {
+      "name": "Sprite bootstrap reference: spread",
+      "pass": true
+    },
+    {
+      "name": "Valid transparent sprite: shield",
+      "pass": true
+    },
+    {
+      "name": "Sprite bootstrap reference: shield",
+      "pass": true
+    },
+    {
+      "name": "Valid transparent sprite: bolt",
+      "pass": true
+    },
+    {
+      "name": "Sprite bootstrap reference: bolt",
+      "pass": true
+    },
+    {
+      "name": "Valid transparent sprite: particle",
+      "pass": true
+    },
+    {
+      "name": "Sprite bootstrap reference: particle",
+      "pass": true
+    },
+    {
+      "name": "PCM WAV: ambient",
+      "pass": true
+    },
+    {
+      "name": "Audio bootstrap reference: ambient",
+      "pass": true
+    },
+    {
+      "name": "PCM WAV: enemy",
+      "pass": true
+    },
+    {
+      "name": "Audio bootstrap reference: enemy",
+      "pass": true
+    },
+    {
+      "name": "PCM WAV: explosion",
+      "pass": true
+    },
+    {
+      "name": "Audio bootstrap reference: explosion",
+      "pass": true
+    },
+    {
+      "name": "PCM WAV: fire",
+      "pass": true
+    },
+    {
+      "name": "Audio bootstrap reference: fire",
+      "pass": true
+    },
+    {
+      "name": "PCM WAV: hit",
+      "pass": true
+    },
+    {
+      "name": "Audio bootstrap reference: hit",
+      "pass": true
+    },
+    {
+      "name": "PCM WAV: lose",
+      "pass": true
+    },
+    {
+      "name": "Audio bootstrap reference: lose",
+      "pass": true
+    },
+    {
+      "name": "PCM WAV: pickup",
+      "pass": true
+    },
+    {
+      "name": "Audio bootstrap reference: pickup",
+      "pass": true
+    },
+    {
+      "name": "PCM WAV: ui",
+      "pass": true
+    },
+    {
+      "name": "Audio bootstrap reference: ui",
+      "pass": true
+    },
+    {
+      "name": "PCM WAV: wave",
+      "pass": true
+    },
+    {
+      "name": "Audio bootstrap reference: wave",
+      "pass": true
+    },
+    {
+      "name": "PCM WAV: win",
+      "pass": true
+    },
+    {
+      "name": "Audio bootstrap reference: win",
+      "pass": true
+    },
+    {
+      "name": "Only pinned built-in packages",
+      "pass": true
+    },
+    {
+      "name": "Exact editor pin",
+      "pass": true
+    },
+    {
+      "name": "Legacy input enabled",
+      "pass": true
+    },
+    {
+      "name": "Both gamepad axes configured",
+      "pass": true
+    },
+    {
+      "name": "Build is Windows x64",
+      "pass": true
+    },
+    {
+      "name": "Automatic import setup",
+      "pass": true
+    },
+    {
+      "name": "Generated scene registered in build",
+      "pass": true
+    },
+    {
+      "name": "Prefab references serialized",
+      "pass": true
+    }
+  ]
+}
