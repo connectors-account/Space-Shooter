@@ -242,3 +242,10 @@ This project is provided as-is for educational purposes. Feel free to modify and
 - Built with **Unity Engine**
 - Placeholder sprites generated programmatically (replace with your own art!)
 - Sound effects generated procedurally (replace with proper audio assets!)
+
+
+### Starfall Squadron — Unity 6 desktop project
+
+The separate [StarfallSquadron project](StarfallSquadron/README.md) contains the Unity 6.0 LTS Windows shooter source, bundled art/audio, automatic scene/prefab setup, and build instructions. Open **`StarfallSquadron/`**, not this repository root, in Unity **6000.0.62f1** to use it. The existing Unity 2022 project above is preserved unchanged.
+
+See [validation status](StarfallSquadron/Docs/Validation.md): the existing 62 static checks and 21 engine-independent rules tests passed; Unity import/playtesting and the Windows executable build remain unverified.

@@ -1,0 +1,22 @@
+PASS: five-wave campaign
+PASS: opening wave size
+PASS: fourth wave size
+PASS: one final boss
+PASS: opening scout health
+PASS: gunship health scales
+PASS: boss health
+PASS: score tiers
+PASS: repair adds two
+PASS: repair caps at max
+PASS: clamp low
+PASS: clamp high
+PASS: clamp interior
+PASS: fast bullet crosses target
+PASS: fast bullet misses target
+PASS: zero-length inside circle
+PASS: zero-length outside circle
+PASS: boundary contact
+PASS: circle behind segment
+PASS: circle past segment
+PASS: relative moving target collision
+21 engine-independent checks passed. This is not a Unity runtime test.
