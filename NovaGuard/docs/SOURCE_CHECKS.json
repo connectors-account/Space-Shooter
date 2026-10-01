@@ -1,0 +1,10 @@
+{
+  "scope": "Static source, syntax trees, configuration and asset integrity only; not Unity compilation or runtime.",
+  "checks_run": 13,
+  "passed": true,
+  "csharp_files_parsed": 15,
+  "failures": [],
+  "unity_editor_tested": false,
+  "windows_build_tested": false,
+  "gameplay_tested": false
+}
