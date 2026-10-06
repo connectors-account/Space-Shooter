@@ -1,0 +1,906 @@
+{
+  "scope": "OFFLINE source syntax and asset integrity only. Unity compilation, import, Play mode, physics, audio output and Windows builds NOT executed.",
+  "counts": {
+    "csharp_scripts": 12,
+    "png_assets": 13,
+    "wav_assets": 8,
+    "source_meta_files": 38
+  },
+  "checks": [
+    {
+      "name": "C# syntax: ProjectSetup.cs",
+      "pass": true,
+      "detail": "Tree-sitter grammar parse, NOT Unity/C# compiler type checking."
+    },
+    {
+      "name": "Class/file: ProjectSetup.cs",
+      "pass": true,
+      "detail": "Main class matches source filename."
+    },
+    {
+      "name": "C# syntax: Bullet.cs",
+      "pass": true,
+      "detail": "Tree-sitter grammar parse, NOT Unity/C# compiler type checking."
+    },
+    {
+      "name": "Class/file: Bullet.cs",
+      "pass": true,
+      "detail": "Main class matches source filename."
+    },
+    {
+      "name": "C# syntax: BurstEffect.cs",
+      "pass": true,
+      "detail": "Tree-sitter grammar parse, NOT Unity/C# compiler type checking."
+    },
+    {
+      "name": "Class/file: BurstEffect.cs",
+      "pass": true,
+      "detail": "Main class matches source filename."
+    },
+    {
+      "name": "C# syntax: Enemy.cs",
+      "pass": true,
+      "detail": "Tree-sitter grammar parse, NOT Unity/C# compiler type checking."
+    },
+    {
+      "name": "Class/file: Enemy.cs",
+      "pass": true,
+      "detail": "Main class matches source filename."
+    },
+    {
+      "name": "C# syntax: FixedAspectCamera.cs",
+      "pass": true,
+      "detail": "Tree-sitter grammar parse, NOT Unity/C# compiler type checking."
+    },
+    {
+      "name": "Class/file: FixedAspectCamera.cs",
+      "pass": true,
+      "detail": "Main class matches source filename."
+    },
+    {
+      "name": "C# syntax: GameAssets.cs",
+      "pass": true,
+      "detail": "Tree-sitter grammar parse, NOT Unity/C# compiler type checking."
+    },
+    {
+      "name": "Class/file: GameAssets.cs",
+      "pass": true,
+      "detail": "Main class matches source filename."
+    },
+    {
+      "name": "C# syntax: GameController.cs",
+      "pass": true,
+      "detail": "Tree-sitter grammar parse, NOT Unity/C# compiler type checking."
+    },
+    {
+      "name": "Class/file: GameController.cs",
+      "pass": true,
+      "detail": "Main class matches source filename."
+    },
+    {
+      "name": "C# syntax: GameUI.cs",
+      "pass": true,
+      "detail": "Tree-sitter grammar parse, NOT Unity/C# compiler type checking."
+    },
+    {
+      "name": "Class/file: GameUI.cs",
+      "pass": true,
+      "detail": "Main class matches source filename."
+    },
+    {
+      "name": "C# syntax: ParallaxBackground.cs",
+      "pass": true,
+      "detail": "Tree-sitter grammar parse, NOT Unity/C# compiler type checking."
+    },
+    {
+      "name": "Class/file: ParallaxBackground.cs",
+      "pass": true,
+      "detail": "Main class matches source filename."
+    },
+    {
+      "name": "C# syntax: PlayerController.cs",
+      "pass": true,
+      "detail": "Tree-sitter grammar parse, NOT Unity/C# compiler type checking."
+    },
+    {
+      "name": "Class/file: PlayerController.cs",
+      "pass": true,
+      "detail": "Main class matches source filename."
+    },
+    {
+      "name": "C# syntax: Powerup.cs",
+      "pass": true,
+      "detail": "Tree-sitter grammar parse, NOT Unity/C# compiler type checking."
+    },
+    {
+      "name": "Class/file: Powerup.cs",
+      "pass": true,
+      "detail": "Main class matches source filename."
+    },
+    {
+      "name": "C# syntax: WaveDirector.cs",
+      "pass": true,
+      "detail": "Tree-sitter grammar parse, NOT Unity/C# compiler type checking."
+    },
+    {
+      "name": "Class/file: WaveDirector.cs",
+      "pass": true,
+      "detail": "Main class matches source filename."
+    },
+    {
+      "name": "Metadata: Assets/Editor",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: Editor",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Scripts",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: Scripts",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Art",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: Art",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Audio",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: Audio",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Editor/ProjectSetup.cs",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: ProjectSetup.cs",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Scripts/GameAssets.cs",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: GameAssets.cs",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Scripts/GameController.cs",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: GameController.cs",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Scripts/PlayerController.cs",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: PlayerController.cs",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Scripts/Enemy.cs",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: Enemy.cs",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Scripts/Bullet.cs",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: Bullet.cs",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Scripts/Powerup.cs",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: Powerup.cs",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Scripts/WaveDirector.cs",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: WaveDirector.cs",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Scripts/ParallaxBackground.cs",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: ParallaxBackground.cs",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Scripts/BurstEffect.cs",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: BurstEffect.cs",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Scripts/GameUI.cs",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: GameUI.cs",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Scripts/FixedAspectCamera.cs",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: FixedAspectCamera.cs",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Art/Source",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: Source",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Art/player.png",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: player.png",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Art/scout.png",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: scout.png",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Art/fan.png",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: fan.png",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Art/spinner.png",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: spinner.png",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Art/repair.png",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: repair.png",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Art/rapid.png",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: rapid.png",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Art/triple.png",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: triple.png",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Art/bolt.png",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: bolt.png",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Art/orb.png",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: orb.png",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Art/stars-far.png",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: stars-far.png",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Art/stars-near.png",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: stars-near.png",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Art/spark.png",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: spark.png",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Audio/shoot.wav",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: shoot.wav",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Audio/enemy-shot.wav",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: enemy-shot.wav",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Audio/hit.wav",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: hit.wav",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Audio/explode.wav",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: explode.wav",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Audio/pickup.wav",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: pickup.wav",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Audio/wave.wav",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: wave.wav",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Audio/game-over.wav",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: game-over.wav",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Audio/ui.wav",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: ui.wav",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Metadata: Assets/Art/Source/ships-atlas.png",
+      "pass": true,
+      "detail": "Source files and folders carry .meta files."
+    },
+    {
+      "name": "GUID: ships-atlas.png",
+      "pass": true,
+      "detail": "Well-formed GUID."
+    },
+    {
+      "name": "Unique GUIDs",
+      "pass": true,
+      "detail": "38 unique source GUIDs."
+    },
+    {
+      "name": "PNG: ships-atlas.png",
+      "pass": true,
+      "detail": "1024x1024, RGBA"
+    },
+    {
+      "name": "PNG alpha: ships-atlas.png",
+      "pass": true,
+      "detail": "Contains transparent and visible pixels."
+    },
+    {
+      "name": "PNG: bolt.png",
+      "pass": true,
+      "detail": "16x40, RGBA"
+    },
+    {
+      "name": "PNG alpha: bolt.png",
+      "pass": true,
+      "detail": "Contains transparent and visible pixels."
+    },
+    {
+      "name": "PNG: fan.png",
+      "pass": true,
+      "detail": "256x256, RGBA"
+    },
+    {
+      "name": "PNG alpha: fan.png",
+      "pass": true,
+      "detail": "Contains transparent and visible pixels."
+    },
+    {
+      "name": "PNG: orb.png",
+      "pass": true,
+      "detail": "24x24, RGBA"
+    },
+    {
+      "name": "PNG alpha: orb.png",
+      "pass": true,
+      "detail": "Contains transparent and visible pixels."
+    },
+    {
+      "name": "PNG: player.png",
+      "pass": true,
+      "detail": "256x256, RGBA"
+    },
+    {
+      "name": "PNG alpha: player.png",
+      "pass": true,
+      "detail": "Contains transparent and visible pixels."
+    },
+    {
+      "name": "PNG: rapid.png",
+      "pass": true,
+      "detail": "64x64, RGBA"
+    },
+    {
+      "name": "PNG alpha: rapid.png",
+      "pass": true,
+      "detail": "Contains transparent and visible pixels."
+    },
+    {
+      "name": "PNG: repair.png",
+      "pass": true,
+      "detail": "64x64, RGBA"
+    },
+    {
+      "name": "PNG alpha: repair.png",
+      "pass": true,
+      "detail": "Contains transparent and visible pixels."
+    },
+    {
+      "name": "PNG: scout.png",
+      "pass": true,
+      "detail": "256x256, RGBA"
+    },
+    {
+      "name": "PNG alpha: scout.png",
+      "pass": true,
+      "detail": "Contains transparent and visible pixels."
+    },
+    {
+      "name": "PNG: spark.png",
+      "pass": true,
+      "detail": "32x32, RGBA"
+    },
+    {
+      "name": "PNG alpha: spark.png",
+      "pass": true,
+      "detail": "Contains transparent and visible pixels."
+    },
+    {
+      "name": "PNG: spinner.png",
+      "pass": true,
+      "detail": "256x256, RGBA"
+    },
+    {
+      "name": "PNG alpha: spinner.png",
+      "pass": true,
+      "detail": "Contains transparent and visible pixels."
+    },
+    {
+      "name": "PNG: stars-far.png",
+      "pass": true,
+      "detail": "512x512, RGBA"
+    },
+    {
+      "name": "PNG alpha: stars-far.png",
+      "pass": true,
+      "detail": "Contains transparent and visible pixels."
+    },
+    {
+      "name": "PNG: stars-near.png",
+      "pass": true,
+      "detail": "512x512, RGBA"
+    },
+    {
+      "name": "PNG alpha: stars-near.png",
+      "pass": true,
+      "detail": "Contains transparent and visible pixels."
+    },
+    {
+      "name": "PNG: triple.png",
+      "pass": true,
+      "detail": "64x64, RGBA"
+    },
+    {
+      "name": "PNG alpha: triple.png",
+      "pass": true,
+      "detail": "Contains transparent and visible pixels."
+    },
+    {
+      "name": "PCM format: enemy-shot.wav",
+      "pass": true,
+      "detail": "Mono 16-bit PCM, 44100 Hz."
+    },
+    {
+      "name": "Audio signal: enemy-shot.wav",
+      "pass": true,
+      "detail": "0.16s; non-silent, unclipped peak 14269. Audibility not listening-tested."
+    },
+    {
+      "name": "PCM format: explode.wav",
+      "pass": true,
+      "detail": "Mono 16-bit PCM, 44100 Hz."
+    },
+    {
+      "name": "Audio signal: explode.wav",
+      "pass": true,
+      "detail": "0.40s; non-silent, unclipped peak 14316. Audibility not listening-tested."
+    },
+    {
+      "name": "PCM format: game-over.wav",
+      "pass": true,
+      "detail": "Mono 16-bit PCM, 44100 Hz."
+    },
+    {
+      "name": "Audio signal: game-over.wav",
+      "pass": true,
+      "detail": "0.85s; non-silent, unclipped peak 15593. Audibility not listening-tested."
+    },
+    {
+      "name": "PCM format: hit.wav",
+      "pass": true,
+      "detail": "Mono 16-bit PCM, 44100 Hz."
+    },
+    {
+      "name": "Audio signal: hit.wav",
+      "pass": true,
+      "detail": "0.25s; non-silent, unclipped peak 13099. Audibility not listening-tested."
+    },
+    {
+      "name": "PCM format: pickup.wav",
+      "pass": true,
+      "detail": "Mono 16-bit PCM, 44100 Hz."
+    },
+    {
+      "name": "Audio signal: pickup.wav",
+      "pass": true,
+      "detail": "0.30s; non-silent, unclipped peak 15032. Audibility not listening-tested."
+    },
+    {
+      "name": "PCM format: shoot.wav",
+      "pass": true,
+      "detail": "Mono 16-bit PCM, 44100 Hz."
+    },
+    {
+      "name": "Audio signal: shoot.wav",
+      "pass": true,
+      "detail": "0.10s; non-silent, unclipped peak 13332. Audibility not listening-tested."
+    },
+    {
+      "name": "PCM format: ui.wav",
+      "pass": true,
+      "detail": "Mono 16-bit PCM, 44100 Hz."
+    },
+    {
+      "name": "Audio signal: ui.wav",
+      "pass": true,
+      "detail": "0.10s; non-silent, unclipped peak 13432. Audibility not listening-tested."
+    },
+    {
+      "name": "PCM format: wave.wav",
+      "pass": true,
+      "detail": "Mono 16-bit PCM, 44100 Hz."
+    },
+    {
+      "name": "Audio signal: wave.wav",
+      "pass": true,
+      "detail": "0.55s; non-silent, unclipped peak 15400. Audibility not listening-tested."
+    },
+    {
+      "name": "UI version",
+      "pass": true,
+      "detail": "UGUI 1.0.0 pinned; no external gameplay libraries."
+    },
+    {
+      "name": "No new Input System",
+      "pass": true,
+      "detail": "Legacy KeyCode polling."
+    },
+    {
+      "name": "Unity version",
+      "pass": true,
+      "detail": "Pinned documented 2022.3 LTS patch."
+    },
+    {
+      "name": "Legacy input enabled",
+      "pass": true,
+      "detail": "Input Manager (Old)."
+    },
+    {
+      "name": "UI input axes",
+      "pass": true,
+      "detail": "StandaloneInputModule axes present."
+    },
+    {
+      "name": "Layers",
+      "pass": true,
+      "detail": "32 layers with reserved game layer indexes."
+    },
+    {
+      "name": "Settings YAML: ProjectSettings.asset",
+      "pass": true,
+      "detail": "Parses as a Unity-tag-stripped YAML mapping; not proof of Unity import."
+    },
+    {
+      "name": "Settings YAML: TagManager.asset",
+      "pass": true,
+      "detail": "Parses as a Unity-tag-stripped YAML mapping; not proof of Unity import."
+    },
+    {
+      "name": "Settings YAML: InputManager.asset",
+      "pass": true,
+      "detail": "Parses as a Unity-tag-stripped YAML mapping; not proof of Unity import."
+    },
+    {
+      "name": "Settings YAML: TimeManager.asset",
+      "pass": true,
+      "detail": "Parses as a Unity-tag-stripped YAML mapping; not proof of Unity import."
+    },
+    {
+      "name": "Settings YAML: EditorBuildSettings.asset",
+      "pass": true,
+      "detail": "Parses as a Unity-tag-stripped YAML mapping; not proof of Unity import."
+    },
+    {
+      "name": "Builder asset: stars-far",
+      "pass": true,
+      "detail": "Literal builder resource exists."
+    },
+    {
+      "name": "Builder asset: stars-near",
+      "pass": true,
+      "detail": "Literal builder resource exists."
+    },
+    {
+      "name": "Builder asset: spark",
+      "pass": true,
+      "detail": "Literal builder resource exists."
+    },
+    {
+      "name": "Builder asset: shoot",
+      "pass": true,
+      "detail": "Literal builder resource exists."
+    },
+    {
+      "name": "Builder asset: enemy-shot",
+      "pass": true,
+      "detail": "Literal builder resource exists."
+    },
+    {
+      "name": "Builder asset: hit",
+      "pass": true,
+      "detail": "Literal builder resource exists."
+    },
+    {
+      "name": "Builder asset: explode",
+      "pass": true,
+      "detail": "Literal builder resource exists."
+    },
+    {
+      "name": "Builder asset: pickup",
+      "pass": true,
+      "detail": "Literal builder resource exists."
+    },
+    {
+      "name": "Builder asset: wave",
+      "pass": true,
+      "detail": "Literal builder resource exists."
+    },
+    {
+      "name": "Builder asset: game-over",
+      "pass": true,
+      "detail": "Literal builder resource exists."
+    },
+    {
+      "name": "Builder asset: ui",
+      "pass": true,
+      "detail": "Literal builder resource exists."
+    },
+    {
+      "name": "Prefab source: player",
+      "pass": true,
+      "detail": "Actor artwork exists for generated prefab."
+    },
+    {
+      "name": "Prefab source: scout",
+      "pass": true,
+      "detail": "Actor artwork exists for generated prefab."
+    },
+    {
+      "name": "Prefab source: fan",
+      "pass": true,
+      "detail": "Actor artwork exists for generated prefab."
+    },
+    {
+      "name": "Prefab source: spinner",
+      "pass": true,
+      "detail": "Actor artwork exists for generated prefab."
+    },
+    {
+      "name": "Prefab source: repair",
+      "pass": true,
+      "detail": "Actor artwork exists for generated prefab."
+    },
+    {
+      "name": "Prefab source: rapid",
+      "pass": true,
+      "detail": "Actor artwork exists for generated prefab."
+    },
+    {
+      "name": "Prefab source: triple",
+      "pass": true,
+      "detail": "Actor artwork exists for generated prefab."
+    },
+    {
+      "name": "Prefab source: bolt",
+      "pass": true,
+      "detail": "Actor artwork exists for generated prefab."
+    },
+    {
+      "name": "Prefab source: orb",
+      "pass": true,
+      "detail": "Actor artwork exists for generated prefab."
+    },
+    {
+      "name": "No placeholder implementation",
+      "pass": true,
+      "detail": "No stub exception/TODO markers in C#."
+    },
+    {
+      "name": "Desktop build target",
+      "pass": true,
+      "detail": "Windows x86_64 / Mono selected in build code."
+    },
+    {
+      "name": "Prefab physics configuration",
+      "pass": true,
+      "detail": "Source sets dynamic zero-gravity trigger bodies and continuous collision detection."
+    },
+    {
+      "name": "Collision truth-table source",
+      "pass": true,
+      "detail": "Only player/enemy, player/enemy-bullet, player/powerup, enemy/player-bullet pairs enabled."
+    },
+    {
+      "name": "Pause and teardown source",
+      "pass": true,
+      "detail": "Pause, focus loss, coroutine cancellation and deferred-destroy guard are present; behavior NOT runtime tested."
+    }
+  ]
+}

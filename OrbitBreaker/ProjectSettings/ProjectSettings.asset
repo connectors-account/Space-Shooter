@@ -1,0 +1,23 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!129 &1
+PlayerSettings:
+  m_ObjectHideFlags: 0
+  serializedVersion: 26
+  companyName: Orbit Breaker
+  productName: Orbit Breaker
+  defaultScreenWidth: 1280
+  defaultScreenHeight: 720
+  defaultIsNativeResolution: 0
+  runInBackground: 0
+  resizableWindow: 0
+  fullscreenMode: 3
+  colorSpace: 0
+  usePlayerLog: 1
+  activeInputHandler: 0
+  scriptingBackend:
+    Standalone: 0
+  scriptingDefineSymbols: {}
+  stripEngineCode: 1
+  scriptingRuntimeVersion: 1
+  bundleVersion: 1.0
