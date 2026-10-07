@@ -1,3 +1,9 @@
+### New standalone Unity 6 desktop project
+
+The completed Stellar Shooter source is in **[stellar_shooter_unity/](stellar_shooter_unity/README.md)**. Open that subfolder in Unity **6000.0.62f1**, not this repository root. Use **Stellar Shooter → 1 - Generate Project** for scene/prefab setup and see [Windows build instructions](stellar_shooter_unity/BUILD_INSTRUCTIONS.md). Unity compilation, Play mode and Windows runtime remain unverified; no executable is included. The earlier root project below is preserved unchanged.
+
+---
+
 # 🚀 Space Shooter - Unity Game
 
 A complete 2D space shooter game built with Unity and C#. Features player ship combat, 3 enemy types, power-ups, wave progression, and full UI.
