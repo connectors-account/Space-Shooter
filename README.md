@@ -242,3 +242,10 @@ This project is provided as-is for educational purposes. Feel free to modify and
 - Built with **Unity Engine**
 - Placeholder sprites generated programmatically (replace with your own art!)
 - Sound effects generated procedurally (replace with proper audio assets!)
+
+
+### Stellar Shooter — standalone Unity 6 desktop source
+
+The newly added [Stellar Shooter project](stellar_shooter_unity/README.md) is self-contained in **`stellar_shooter_unity/`**. Open that subfolder (the one containing its own `Assets`, `Packages`, and `ProjectSettings`) in Unity Hub with **Unity 6000.0.62f1**; do not open the repository root for this version. The existing root project is preserved unchanged.
+
+Use **Stellar Shooter → 1 - Generate Project** to create and wire its scene and prefabs, then **Stellar Shooter → 3 - Build Windows x64** for a Windows desktop build. Setup, controls, and distribution instructions are in its README. Prior offline checks passed 222 source/asset assertions and 82 compiled pure-C# rule assertions; Unity compilation, scene generation, Play mode, and Windows build/runtime remain **untested**. No prebuilt executable is included.
