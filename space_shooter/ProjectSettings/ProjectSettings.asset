@@ -1,0 +1,23 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!129 &1
+PlayerSettings:
+  m_ObjectHideFlags: 0
+  serializedVersion: 28
+  productGUID: 26e1d7f1f5dd4e37b8da2ebd1ea4fb23
+  companyName: Minimal Games
+  productName: Space Shooter
+  defaultScreenWidth: 960
+  defaultScreenHeight: 720
+  defaultIsNativeResolution: 0
+  runInBackground: 0
+  resizableWindow: 1
+  fullscreenMode: 3
+  visibleInBackground: 1
+  usePlayerLog: 1
+  bundleVersion: 1.0
+  activeInputHandler: 0
+  scriptingBackend:
+    Standalone: 0
+  scriptingDefineSymbols: {}
+  apiCompatibilityLevelPerPlatform: {}
