@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!129 &1
+PlayerSettings:
+  m_ObjectHideFlags: 0
+  serializedVersion: 27
+  productGUID: 7d30f16c759142a7b270a2eae7f388a0
+  companyName: Space Shooter
+  productName: Space Shooter
+  defaultScreenWidth: 1280
+  defaultScreenHeight: 720
+  defaultIsNativeResolution: 0
+  runInBackground: 0
+  resizableWindow: 1
+  fullscreenMode: 3
+  allowFullscreenSwitch: 1
+  forceSingleInstance: 1
+  usePlayerLog: 1
+  bundleVersion: 1.0
+  scriptingBackend:
+    Standalone: 0
+  activeInputHandler: 0
